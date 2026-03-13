@@ -2,8 +2,8 @@
 
 *, *::before, *::after {
   box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+  /* margin: 0;
+  padding: 0; */
 }
 
 :root {
@@ -39,4 +39,8 @@ button {
 button:focus,
 button:focus-visible {
   outline: none;
+}
+
+.session-notes-list li::marker {
+  color: #565d6d;
 }

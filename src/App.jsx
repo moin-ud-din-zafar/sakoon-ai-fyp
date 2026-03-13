@@ -3,6 +3,7 @@ import Register from "./pages/auth/Register";
 import Login from "./pages/auth/Login";
 import ForgotPassword from "./pages/auth/ForgotPassword";
 import Home from "./pages/HomePage/Home";
+import Chat from "./pages/ChatPage/Chat";
 import Summary from "./pages/Summary/Summary";
 import MoodTracker from "./pages/MoodTracker/MoodTracker";
 import PsychoEducation from "./pages/PsychoEducation/PsychoEducation";
@@ -17,6 +18,7 @@ function App() {
         <Route path="/" element={<Navigate to="/session" replace />} />
         <Route path="/session" element={<Home />} />
         <Route path="/home" element={<Home />} />
+        <Route path="/chat" element={<Chat />} />
         <Route path="/summary" element={<Summary />} />
         <Route path="/mood-tracker" element={<MoodTracker />} />
         <Route path="/psycho-education" element={<PsychoEducation />} />
