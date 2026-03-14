@@ -1,14 +1,17 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import ForgotPasswordmage from "../../assets/pexels-photo-4225920.jpeg";
+import { useSignIn } from "@clerk/react";
+import forgotImage from "../../assets/pexels-photo-4225920.jpeg";
 
 export default function ForgotPassword() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(false);
+  const { signIn, fetchStatus } = useSignIn();
+  const [emailAddress, setEmailAddress] = useState("");
+  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [codeSent, setCodeSent] = useState(false);
   const [error, setError] = useState("");
 
-  // Responsive detection
   const isWindow = typeof window !== "undefined";
   const [isMobile, setIsMobile] = useState(isWindow ? window.innerWidth <= 680 : false);
   const [isTablet, setIsTablet] = useState(isWindow ? window.innerWidth <= 900 : false);
@@ -23,17 +26,71 @@ export default function ForgotPassword() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const handleSubmit = (e) => {
+  const sendCode = async (e) => {
     e.preventDefault();
     setError("");
-    if (!email) {
+    if (!signIn) return;
+    if (!emailAddress.trim()) {
       setError("Please enter your email.");
       return;
     }
-    setLoading(true);
-    console.log("Recovery email:", email);
-    // TODO: connect to backend API for recovery
-    setTimeout(() => setLoading(false), 700);
+    const { error: createError } = await signIn.create({ identifier: emailAddress.trim() });
+    if (createError) {
+      setError(createError.errors?.[0]?.message || "Invalid email or account not found.");
+      return;
+    }
+    const { error: sendCodeError } = await signIn.resetPasswordEmailCode.sendCode();
+    if (sendCodeError) {
+      setError(sendCodeError.errors?.[0]?.message || "Failed to send code.");
+      return;
+    }
+    setCodeSent(true);
+  };
+
+  const verifyCode = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (!signIn) return;
+    if (!code.trim()) {
+      setError("Please enter the code.");
+      return;
+    }
+    const { error: verifyErr } = await signIn.resetPasswordEmailCode.verifyCode({ code: code.trim() });
+    if (verifyErr) {
+      setError(verifyErr.errors?.[0]?.message || "Invalid code.");
+      return;
+    }
+  };
+
+  const submitNewPassword = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (!signIn) return;
+    if (!password || password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+    const { error: submitErr } = await signIn.resetPasswordEmailCode.submitPassword({ password });
+    if (submitErr) {
+      setError(submitErr.errors?.[0]?.message || "Failed to set password.");
+      return;
+    }
+    if (signIn.status === "complete") {
+      const { error: finalError } = await signIn.finalize({
+        navigate: async ({ decorateUrl }) => {
+          const url = decorateUrl("/session");
+          if (url.startsWith("http")) {
+            window.location.href = url;
+          } else {
+            navigate(url, { replace: true });
+          }
+        },
+      });
+      if (finalError) {
+        setError(finalError.errors?.[0]?.message || "Something went wrong.");
+        return;
+      }
+    }
   };
 
   const cardStyle = {
@@ -67,9 +124,6 @@ export default function ForgotPassword() {
     borderRadius: "14px",
     overflow: "hidden",
     backgroundColor: "#c2eaea",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
   };
 
   const rightPanelStyle = {
@@ -83,7 +137,7 @@ export default function ForgotPassword() {
 
   const inputStyle = {
     width: "100%",
-    padding: "11px 14px 11px 38px",
+    padding: "11px 14px",
     border: "1.5px solid #e2e6ea",
     borderRadius: "8px",
     fontSize: "13.5px",
@@ -92,6 +146,20 @@ export default function ForgotPassword() {
     boxSizing: "border-box",
     backgroundColor: "#ffffff",
     minHeight: "38px",
+  };
+
+  const btnStyle = {
+    width: "100%",
+    padding: "13px",
+    backgroundColor: "#2dcece",
+    color: "#ffffff",
+    border: "none",
+    borderRadius: "8px",
+    fontSize: "15px",
+    fontWeight: "600",
+    cursor: fetchStatus === "fetching" ? "not-allowed" : "pointer",
+    marginTop: "4px",
+    opacity: fetchStatus === "fetching" ? 0.7 : 1,
   };
 
   return (
@@ -108,128 +176,99 @@ export default function ForgotPassword() {
       }}
     >
       <div style={cardStyle}>
-        {/* LEFT PANEL */}
         <div style={leftPanelStyle}>
           <div style={imageBoxStyle}>
-            <img
-              src={ForgotPasswordmage}
-              alt="forgot"
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
+            <img src={forgotImage} alt="Recover" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           </div>
         </div>
-
-        {/* RIGHT PANEL */}
         <div style={rightPanelStyle}>
-          {/* Back button */}
-          <div style={{ marginBottom: "18px" }}>
+          <button
+            type="button"
+            onClick={() => navigate("/login")}
+            style={{ background: "none", border: "none", cursor: "pointer", padding: 0, marginBottom: 18 }}
+            aria-label="Back to login"
+          >
+            <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="#2dcece" strokeWidth="2.2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+          </button>
+
+          <h2 style={{ fontSize: "28px", fontWeight: 700, color: "#1a1a1a", margin: "0 0 6px 0" }}>
+            Recover your account
+          </h2>
+          <p style={{ fontSize: 13, color: "#8c9aa3", margin: "0 0 30px 0", lineHeight: 1.6 }}>
+            {!codeSent
+              ? "Enter your email and we’ll send you a reset code."
+              : signIn?.status === "needs_new_password"
+                ? "Enter your new password."
+                : "Enter the code we sent to your email."}
+          </p>
+
+          {error && (
+            <div style={{ color: "#c0392b", fontSize: 13, marginBottom: 12 }}>{error}</div>
+          )}
+
+          {!codeSent && (
+            <form onSubmit={sendCode} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <label style={{ fontSize: 13.5, fontWeight: 500, color: "#4a4a4a" }}>Email</label>
+              <input
+                type="email"
+                placeholder="e.g. you@example.com"
+                value={emailAddress}
+                onChange={(e) => setEmailAddress(e.target.value)}
+                disabled={fetchStatus === "fetching"}
+                style={inputStyle}
+              />
+              <button type="submit" disabled={fetchStatus === "fetching"} style={btnStyle}>
+                {fetchStatus === "fetching" ? "Sending..." : "Send reset code"}
+              </button>
+            </form>
+          )}
+
+          {codeSent && signIn?.status !== "needs_new_password" && (
+            <form onSubmit={verifyCode} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <label style={{ fontSize: 13.5, fontWeight: 500, color: "#4a4a4a" }}>Verification code</label>
+              <input
+                type="text"
+                placeholder="Enter code from email"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                disabled={fetchStatus === "fetching"}
+                style={inputStyle}
+              />
+              <button type="submit" disabled={fetchStatus === "fetching"} style={btnStyle}>
+                {fetchStatus === "fetching" ? "Verifying..." : "Verify code"}
+              </button>
+            </form>
+          )}
+
+          {codeSent && signIn?.status === "needs_new_password" && (
+            <form onSubmit={submitNewPassword} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <label style={{ fontSize: 13.5, fontWeight: 500, color: "#4a4a4a" }}>New password</label>
+              <input
+                type="password"
+                placeholder="At least 8 characters"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={fetchStatus === "fetching"}
+                style={inputStyle}
+                minLength={8}
+              />
+              <button type="submit" disabled={fetchStatus === "fetching"} style={btnStyle}>
+                {fetchStatus === "fetching" ? "Updating..." : "Set new password"}
+              </button>
+            </form>
+          )}
+
+          <div style={{ marginTop: 24, textAlign: "center" }}>
             <button
               type="button"
               onClick={() => navigate("/login")}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                padding: "0",
-                display: "flex",
-                alignItems: "center",
-              }}
+              style={{ background: "none", border: "none", color: "#2dcece", fontSize: 13.5, fontWeight: 500, cursor: "pointer" }}
             >
-              <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="#2dcece" strokeWidth="2.2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
+              Back to Sign in
             </button>
           </div>
-
-          {/* Title */}
-          <h2 style={{ fontSize: "28px", fontWeight: "700", color: "#1a1a1a", margin: "0 0 6px 0", letterSpacing: "-0.3px" }}>
-            Recover your account!
-          </h2>
-
-          {/* Subtitle */}
-          <p style={{ fontSize: "13px", color: "#8c9aa3", margin: "0 0 30px 0", lineHeight: "1.6" }}>
-            Please enter your email to access your account.
-          </p>
-
-          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {/* Email input */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px", position: "relative" }}>
-              <label style={{ fontSize: "13.5px", fontWeight: "500", color: "#4a4a4a" }}>
-                Enter your recovery email
-              </label>
-              <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
-                <span
-                  style={{
-                    position: "absolute",
-                    left: "13px",
-                    display: "flex",
-                    alignItems: "center",
-                    pointerEvents: "none",
-                  }}
-                >
-                  <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="#c0c8d0" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                </span>
-                <input
-                  type="email"
-                  name="email"
-                  placeholder="Enter your email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  disabled={loading}
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-
-            {/* Error */}
-            {error && <div style={{ color: "#d9534f", fontSize: "13px" }}>{error}</div>}
-
-            {/* Send Link button */}
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                width: "100%",
-                padding: "13px",
-                backgroundColor: "#2dcece",
-                color: "#ffffff",
-                border: "none",
-                borderRadius: "8px",
-                fontSize: "15px",
-                fontWeight: "600",
-                cursor: loading ? "not-allowed" : "pointer",
-                marginTop: "4px",
-                letterSpacing: "0.4px",
-                transition: "background-color 0.15s ease",
-              }}
-              onMouseEnter={(e) => !loading && (e.currentTarget.style.backgroundColor = "#20bbbb")}
-              onMouseLeave={(e) => !loading && (e.currentTarget.style.backgroundColor = "#2dcece")}
-            >
-              {loading ? "Sending..." : "Send Link"}
-            </button>
-
-            {/* Sign Up link */}
-            <div style={{ display: "flex", justifyContent: "center", marginTop: "6px" }}>
-              <button
-                type="button"
-                onClick={() => navigate("/register")}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "#2dcece",
-                  fontSize: "13.5px",
-                  fontWeight: "500",
-                  cursor: "pointer",
-                  padding: "0",
-                }}
-              >
-                Don't have an account? Sign Up
-              </button>
-            </div>
-          </form>
         </div>
       </div>
     </div>

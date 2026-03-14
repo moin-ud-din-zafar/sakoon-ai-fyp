@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
+import { Show, UserButton } from "@clerk/react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faArrowUpFromBracket } from "@fortawesome/free-solid-svg-icons";
 import Button from "../common/Button";
@@ -37,13 +38,30 @@ export default function Header() {
         </nav>
 
         <div className="hidden flex-1 items-center justify-end gap-3 lg:flex">
-          <Button text="End Session" backgroundColor="red" />
-          <Button text="Save Session" border />
-          <Button
-            text="Share"
-            border
-            icon={<FontAwesomeIcon icon={faArrowUpFromBracket} />}
-          />
+          <Show when="signed-in">
+            <Button text="End Session" backgroundColor="red" />
+            <Button text="Save Session" border />
+            <Button
+              text="Share"
+              border
+              icon={<FontAwesomeIcon icon={faArrowUpFromBracket} />}
+            />
+            <UserButton afterSignOutUrl="/login" />
+          </Show>
+          <Show when="signed-out">
+            <NavLink
+              to="/login"
+              className="text-sm font-medium text-black hover:text-[#32c4c3]"
+            >
+              Sign In
+            </NavLink>
+            <NavLink
+              to="/register"
+              className="rounded-md bg-[#32c4c3] px-4 py-2 text-sm font-medium text-white hover:bg-[#27a5a4]"
+            >
+              Sign Up
+            </NavLink>
+          </Show>
         </div>
 
         <button
@@ -89,14 +107,35 @@ export default function Header() {
             ))}
           </nav>
           <div className="mt-4 flex flex-col gap-2">
-            <Button text="End Session" backgroundColor="red" className="w-full" />
-            <Button text="Save Session" border className="w-full" />
-            <Button
-              text="Share"
-              border
-              className="w-full"
-              icon={<FontAwesomeIcon icon={faArrowUpFromBracket} />}
-            />
+            <Show when="signed-in">
+              <Button text="End Session" backgroundColor="red" className="w-full" />
+              <Button text="Save Session" border className="w-full" />
+              <Button
+                text="Share"
+                border
+                className="w-full"
+                icon={<FontAwesomeIcon icon={faArrowUpFromBracket} />}
+              />
+              <div className="flex justify-center">
+                <UserButton afterSignOutUrl="/login" />
+              </div>
+            </Show>
+            <Show when="signed-out">
+              <NavLink
+                to="/login"
+                className="rounded-md py-2 text-center text-base font-medium text-[#32c4c3] hover:bg-gray-100"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                Sign In
+              </NavLink>
+              <NavLink
+                to="/register"
+                className="rounded-md bg-[#32c4c3] py-2 text-center text-base font-medium text-white hover:bg-[#27a5a4]"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                Sign Up
+              </NavLink>
+            </Show>
           </div>
         </div>
       ) : null}

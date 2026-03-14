@@ -9,23 +9,82 @@ import MoodTracker from "./pages/MoodTracker/MoodTracker";
 import PsychoEducation from "./pages/PsychoEducation/PsychoEducation";
 import Settings from "./pages/Settings/Settings";
 import Header from "./components/layout/Header";
+import ProtectedRoute from "./components/auth/ProtectedRoute";
+import SignOutOnStorageClear from "./components/auth/SignOutOnStorageClear";
 
 function App() {
   return (
     <BrowserRouter>
+      <SignOutOnStorageClear />
       <Header />
       <Routes>
-        <Route path="/" element={<Navigate to="/session" replace />} />
-        <Route path="/session" element={<Home />} />
-        <Route path="/home" element={<Home />} />
-        <Route path="/chat" element={<Chat />} />
-        <Route path="/summary" element={<Summary />} />
-        <Route path="/mood-tracker" element={<MoodTracker />} />
-        <Route path="/psycho-education" element={<PsychoEducation />} />
-        <Route path="/settings" element={<Settings />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Navigate to="/session" replace />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/session"
+          element={
+            <ProtectedRoute>
+              <Home />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/home"
+          element={
+            <ProtectedRoute>
+              <Home />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/chat"
+          element={
+            <ProtectedRoute>
+              <Chat />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/summary"
+          element={
+            <ProtectedRoute>
+              <Summary />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/mood-tracker"
+          element={
+            <ProtectedRoute>
+              <MoodTracker />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/psycho-education"
+          element={
+            <ProtectedRoute>
+              <PsychoEducation />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <Settings />
+            </ProtectedRoute>
+          }
+        />
         <Route path="*" element={<Navigate to="/session" replace />} />
       </Routes>
     </BrowserRouter>
