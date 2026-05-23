@@ -1,0 +1,32 @@
+---
+description: React frontend and API integration conventions
+globs: frontend/**/*.{jsx,js,tsx,ts}
+alwaysApply: false
+---
+
+# Frontend (React + Vite)
+
+## API calls
+- **Only** add HTTP calls in `frontend/src/services/api.js` using the shared `api` axios instance
+- Base URL: `import.meta.env.VITE_API_BASE_URL` (default `http://localhost:8000/api/v1`)
+
+## State
+- User: `AppContext` + `localStorage` key `sakoon_user` (`id`, `name`, `languagePreference`)
+- Session: `refreshSession()` → `GET /auth/session/{userId}`; map snake_case `user_id` → `userId` in AppContext only
+- Chat: `ChatProvider` needs `userId` + `sessionId`
+
+## UX rules
+- Chat: show loading/typing; responses can take 2–60s
+- `isCrisis: true` → show `CrisisSupportPanel`; do not push exercises as primary CTA
+- `isLimitReached` → block chat (`SessionLimitBanner`)
+
+## Not wired yet (add via api.js)
+- Assessment routes under `/assessment/*`
+- Mood log/behavior under `/mood/*`
+- See `docs/FRONTEND_BACKEND_INTEGRATION_GUIDE.md` Section 11 for copy-paste helpers
+
+## Errors
+```javascript
+const detail = err?.response?.data?.detail;
+const msg = typeof detail === "string" ? detail : "Request failed";
+```

@@ -1,0 +1,33 @@
+---
+description: FastAPI backend patterns for Sakoon AI routes and services
+globs: backend/**/*.py
+alwaysApply: false
+---
+
+# Backend (FastAPI)
+
+## Structure
+- Routes: `backend/app/api/routes/` — thin handlers only
+- Logic: `backend/app/services/` — DB, LLM, classifier, assessment
+- Config: `backend/app/config.py` via `.env`
+- Constants: `backend/app/core/constants.py` (MH classes, crisis keywords, helplines)
+
+## New endpoints
+1. Add route in `app/api/routes/*.py`
+2. Register router in `app/main.py` under prefix `/api/v1`
+3. Document in `backend/API_COMPLETE_TEST_DOCUMENTATION.md`
+4. Add test in `backend/test_complete.py` or `test_endpoints_manual.ps1`
+
+## Chat pipeline order (`chat.py`)
+Classify → risk check → emotion/sentiment → LLM → exercise (skip if crisis) → `create_chat_log`
+
+## Crisis
+- Never skip `RiskDetector` before LLM
+- If `is_crisis`, return helplines and do not assign exercises
+
+## DB
+- Use `db_service.get_db()` / `execute_one` — no raw SQL in routes
+- SQLite dev: `USE_SQLITE=true` in `.env`
+
+## ML models
+- Classifier requires `backend/models/*.joblib` — run `python scripts/train_model.py` if missing
