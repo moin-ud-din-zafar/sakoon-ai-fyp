@@ -1,14 +1,17 @@
 # Sakoon AI — Frontend ↔ Backend Integration Guide (Developer Handbook)
 
 **Audience:** Frontend developers, full-stack teammates, FYP evaluators  
-**Backend repo branch:** `Backend_sakoon_Ai` → https://github.com/moin-ud-din-zafar/sakoon-ai-fyp  
+**Backend branch (latest):** `feature/jwt-email-password-auth` → https://github.com/Noor-Ul-ain68/Proj  
 **API version:** `/api/v1`  
-**Last updated:** 2026-05-20
+**Last updated:** 2026-06-01
+
+> **Breaking change (June 2026):** User auth is now **email + password + JWT**. Name-only login no longer works. Every protected route needs `Authorization: Bearer <token>`. See [Section 7](#7-authentication--session-model-jwt) and `backend/AUTH_JWT_TESTING.md`.
 
 ---
 
 ## Table of contents
 
+0. [Git & which branch to use](#0-git--which-branch-to-use)
 1. [Overview](#1-overview)
 2. [Project layout](#2-project-layout)
 3. [Rules & regulations (must follow)](#3-rules--regulations-must-follow)
@@ -29,6 +32,23 @@
 
 ---
 
+## 0. Git & which branch to use
+
+| Question | Answer |
+|----------|--------|
+| **Backend code kahan hai?** | GitHub: **Noor-Ul-ain68/Proj**, branch **`feature/jwt-email-password-auth`** |
+| **Push kis account se?** | Team rule: **Noor-Ul-ain68** only — Windows Credential Manager mein galat account (e.g. Mutahar456) ho to `sakoon` remote par 403 |
+| **Git login abhi PC par?** | Commit author often `Mutahar456` — push alag account ho sakta hai; details: **`docs/GIT_AND_BRANCHES.md`** |
+| **Poorana branch?** | `Backend_sakoon_Ai` (same JWT commit); prefer **`feature/jwt-email-password-auth`** for new work |
+
+```powershell
+git clone https://github.com/Noor-Ul-ain68/Proj.git
+cd Proj
+git checkout feature/jwt-email-password-auth
+```
+
+---
+
 ## 1. Overview
 
 Sakoon AI is split into:
@@ -41,8 +61,10 @@ Sakoon AI is split into:
 The frontend **does not** embed AI logic. It only:
 
 1. Sends HTTP JSON (or blob for audio) to the backend  
-2. Stores `userId` / `sessionId` in React state + `localStorage`  
-3. Renders responses (chat, exercises, crisis panel, mood charts)
+2. Stores **`accessToken`** + user (`id`, `email`, …) in `localStorage`  
+3. Sends **`Authorization: Bearer <token>`** on protected APIs  
+4. Stores `sessionId` in React state after `GET /auth/session`  
+5. Renders responses (chat, exercises, crisis panel, mood charts)
 
 ```
 ┌─────────────┐     HTTP/JSON      ┌──────────────────────┐
@@ -94,7 +116,9 @@ Ai Virtual Assistant/
 |------|--------|
 | **R5** | All user APIs go to `{BASE}/api/v1/...` — no trailing slash required |
 | **R6** | Send `Content-Type: application/json` on POST bodies |
-| **R7** | Pass **`userId` + `sessionId`** on every chat call — there is **no JWT** yet |
+| **R7** | Send **`Authorization: Bearer <accessToken>`** on all protected routes; chat body still needs **`userId` + `sessionId`** matching the token user |
+| **R7b** | Store token in `localStorage` (e.g. `sakoon_token`) — clear on logout |
+| **R7c** | Register/login body: **`email` + `password`** (min 8 chars) — not name-only |
 | **R8** | Max **3 sessions** per user — handle `isLimitReached: true` in UI |
 | **R9** | On `isCrisis: true`, show helplines and **do not** push exercises as primary CTA |
 
@@ -188,6 +212,9 @@ If frontend shows network errors, backend is usually not running or wrong `VITE_
 | `OPENROUTER_API_KEY` | For real AI replies | LLM; without it fallback text may be used |
 | `OPENROUTER_MODEL` | No | Default Llama on OpenRouter |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` / `ADMIN_KEY` | Admin UI only | |
+| `JWT_SECRET` | **Yes (prod)** | Sign user tokens — long random string |
+| `JWT_ALGORITHM` | No | Default `HS256` |
+| `JWT_EXPIRE_MINUTES` | No | Default `10080` (7 days) |
 | `TTS_PROVIDER` | No | `edge` (default) |
 
 ### Frontend (`frontend/.env`)
@@ -214,7 +241,31 @@ export const api = axios.create({
   baseURL: API_BASE_URL,
   headers: { "Content-Type": "application/json" },
 });
+
+// Attach JWT to every request (after login/register)
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("sakoon_token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Optional: redirect to login on 401
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err.response?.status === 401 && !err.config?.url?.includes("/auth/login")) {
+      localStorage.removeItem("sakoon_token");
+      localStorage.removeItem("sakoon_user");
+      // window.location.href = "/login";
+    }
+    return Promise.reject(err);
+  }
+);
 ```
+
+**Note:** `POST /auth/register` and `POST /auth/login` are **public** (no token). Admin routes use **`X-Admin-Key`**, not the user JWT.
 
 All new endpoints should be thin wrappers:
 
@@ -232,32 +283,62 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "...";
 
 ---
 
-## 7. Authentication & session model
+## 7. Authentication & session model (JWT)
 
-**There is no Bearer token / JWT for end users.**
+End users authenticate with **email + password**. The API returns a **JWT** used on all protected routes.
 
 | Concept | Where stored | How obtained |
 |---------|--------------|--------------|
-| User | `localStorage` key `sakoon_user` | `POST /auth/register` or `/auth/login` |
-| Session | React `AppContext.currentSession` | `GET /auth/session/{userId}` |
+| **Access token** | `localStorage` → `sakoon_token` | `accessToken` from register/login response |
+| **User profile** | `localStorage` → `sakoon_user` | `user` object from same response |
+| **Session** | React `AppContext.currentSession` | `GET /auth/session` (JWT required — **no** `userId` in URL) |
 
-### User object shape (frontend)
+### Public vs protected routes
 
-After register/login, store:
+| Type | Routes | Header |
+|------|--------|--------|
+| **Public** | `/auth/register`, `/auth/login`, `/health`, `/tts/*`, `/avatar/*` | None |
+| **User JWT** | `/auth/me`, `/auth/session`, `/chat/*`, `/user/*`, `/mood/*`, `/assessment/*`, `/session/*/history` | `Authorization: Bearer <accessToken>` |
+| **Admin** | `/admin/*` (except login) | `X-Admin-Key: <adminKey>` |
 
-```javascript
+### Register / login response shape
+
+```json
 {
-  id: number,              // userId — use in all API calls
-  name: string,
-  languagePreference: "en" | "ur" | ...,
-  totalSessions: number,
-  currentSession: null,    // filled after refreshSession
+  "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+  "tokenType": "bearer",
+  "user": {
+    "id": 1,
+    "name": "Ali",
+    "email": "ali@example.com",
+    "languagePreference": "en",
+    "totalSessions": 0,
+    "createdAt": "2026-06-01 12:00:00"
+  }
 }
 ```
 
-### Session object shape (after `getSession` / `refreshSession`)
+**Frontend must:**
 
-Backend returns snake_case; `AppContext` maps to:
+1. `localStorage.setItem("sakoon_token", data.accessToken)`  
+2. `localStorage.setItem("sakoon_user", JSON.stringify(data.user))`  
+3. Use axios interceptor (Section 6) so all protected calls include the Bearer header  
+
+### User object shape (frontend)
+
+```javascript
+{
+  id: number,              // userId — still send in chat body
+  name: string,
+  email: string,           // NEW — show in profile
+  languagePreference: "en" | "ur" | ...,
+  totalSessions: number,
+}
+```
+
+### Session object shape (after `refreshSession`)
+
+Call **`GET /auth/session`** (not `/auth/session/{userId}`). Backend returns camelCase in JSON:
 
 ```javascript
 {
@@ -270,9 +351,11 @@ Backend returns snake_case; `AppContext` maps to:
 }
 ```
 
+`AppContext.refreshSession` should call `getSession()` with **no** user id argument once `api.js` is updated.
+
 ### Session limit
 
-When `GET /auth/session/{userId}` returns:
+When `GET /auth/session` returns:
 
 ```json
 {
@@ -292,13 +375,14 @@ Show `SessionLimitBanner` (already in `ChatPage.jsx`) — do not call chat API.
 
 ```
 RegisterPage
-  → registerUser(name, lang)     POST /auth/register
-  → setUser(...) + localStorage
+  → registerUser({ name, email, password, languagePreference })
+     POST /auth/register
+  → save accessToken + user to localStorage
   → navigate /home
 
 User opens Chat
   → ChatPage → refreshSession()
-  → getSession(user.id)          GET /auth/session/{userId}
+  → getSession()                 GET /auth/session  (+ Bearer)
   → setCurrentSession(session)
 
 ChatProvider mounts
@@ -314,8 +398,17 @@ User sends message
 ### Flow 2 — Returning user
 
 ```
-LoginPage → loginUser(name)      POST /auth/login
-→ same as above
+LoginPage → loginUser({ email, password })   POST /auth/login
+  → save accessToken + user
+  → refreshSession() → GET /auth/session
+→ same chat flow as above
+```
+
+### Flow 2b — Logout
+
+```
+Remove sakoon_token + sakoon_user from localStorage
+Clear AppContext user/session → redirect /login
 ```
 
 ### Flow 3 — Mood dashboard
@@ -372,9 +465,10 @@ GET  /mood/behavior/{userId}
 
 | Backend endpoint | Integrated? | Frontend file |
 |------------------|-------------|----------------|
-| `POST /auth/register` | ✅ | `RegisterPage.jsx` → `api.registerUser` |
-| `POST /auth/login` | ✅ | `LoginPage.jsx` → `api.loginUser` |
-| `GET /auth/session/{id}` | ✅ | `AppContext.refreshSession` |
+| `POST /auth/register` | ⚠️ **Update UI** | Needs `email` + `password`; save `accessToken` |
+| `POST /auth/login` | ⚠️ **Update UI** | Email + password; save `accessToken` |
+| `GET /auth/me` | ❌ optional | Profile page |
+| `GET /auth/session` | ⚠️ **Update** | Was `/auth/session/{userId}` — now JWT only |
 | `POST /chat/message` | ✅ | `ChatContext.sendMessage` |
 | `GET /session/{id}/history` | ✅ | `ChatContext` useEffect |
 | `POST /chat/journal-reflection` | ✅ | `ExerciseRunner.jsx` |
@@ -383,7 +477,7 @@ GET  /mood/behavior/{userId}
 | `POST /user/{id}/exercise-feedback` | ✅ | `ExerciseRunner.jsx` |
 | `POST /tts/speak` | ✅ | `TTSContext.jsx` (fetch blob) |
 | Admin routes | ✅ | `AdminDashboardPage.jsx` |
-| `POST /mood/log` | ❌ | Add to `api.js` + new UI |
+| `POST /mood/log` | ❌ | Add to `api.js` + JWT interceptor |
 | `GET /mood/history/{id}` | ❌ | Add to `api.js` |
 | `POST /mood/behavior` | ❌ | Add to `api.js` |
 | Assessment (8 routes) | ❌ | Add to `api.js` + wizard page |
@@ -404,6 +498,8 @@ Content-Type: application/json
 
 {
   "name": "Ali",
+  "email": "ali@example.com",
+  "password": "TestPass123!",
   "languagePreference": "en"
 }
 ```
@@ -412,29 +508,37 @@ Response:
 
 ```json
 {
+  "accessToken": "eyJ...",
+  "tokenType": "bearer",
   "user": {
     "id": 1,
     "name": "Ali",
+    "email": "ali@example.com",
     "languagePreference": "en",
     "totalSessions": 0,
-    "createdAt": "2026-05-20 12:00:00"
+    "createdAt": "2026-06-01 12:00:00"
   }
 }
 ```
+
+**409** if email already registered. **422** if password &lt; 8 chars or invalid email.
 
 ### 10.2 Login
 
 ```http
 POST /auth/login
-{ "name": "Ali" }
+Content-Type: application/json
+
+{ "email": "ali@example.com", "password": "TestPass123!" }
 ```
 
-Same `user` shape. **404** if not found.
+Same response as register (new `accessToken` each login). **401** if wrong email/password.
 
 ### 10.3 Get session
 
 ```http
-GET /auth/session/1
+GET /auth/session
+Authorization: Bearer <accessToken>
 ```
 
 Response (active):
@@ -458,6 +562,7 @@ Response (active):
 
 ```http
 POST /chat/message
+Authorization: Bearer <accessToken>
 
 {
   "userId": 1,
@@ -465,6 +570,8 @@ POST /chat/message
   "message": "I feel stressed"
 }
 ```
+
+**403** if `userId` / `sessionId` do not belong to the token user. **401** if token missing or expired.
 
 Response (use these fields in UI):
 
@@ -497,6 +604,7 @@ Example `suggestedExercise`:
 
 ```http
 GET /session/5/history
+Authorization: Bearer <accessToken>
 ```
 
 ```json
@@ -539,9 +647,50 @@ X-Admin-Key: <adminKey from /admin/login>
 
 ---
 
-## 11. Adding missing APIs to `api.js`
+## 11. Updating `api.js` for JWT (required first)
 
-Copy this block into `frontend/src/services/api.js` when building assessment / mood features:
+Replace the **auth** section in `frontend/src/services/api.js`:
+
+```javascript
+const TOKEN_KEY = "sakoon_token";
+const USER_KEY = "sakoon_user";
+
+export const getStoredToken = () => localStorage.getItem(TOKEN_KEY);
+export const setAuth = ({ accessToken, user }) => {
+  if (accessToken) localStorage.setItem(TOKEN_KEY, accessToken);
+  if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+};
+export const clearAuth = () => {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+};
+
+export const registerUser = ({ name, email, password, languagePreference = "en" }) =>
+  api.post("/auth/register", { name, email, password, languagePreference }).then((r) => r.data);
+
+export const loginUser = ({ email, password }) =>
+  api.post("/auth/login", { email, password }).then((r) => r.data);
+
+export const getMe = () => api.get("/auth/me").then((r) => r.data);
+
+export const getSession = () => api.get("/auth/session").then((r) => r.data);
+```
+
+**`RegisterPage.jsx` / `LoginPage.jsx`:** add email + password fields; on success:
+
+```javascript
+const data = await registerUser({ name, email, password, languagePreference });
+setAuth({ accessToken: data.accessToken, user: data.user });
+setUser(data.user);
+```
+
+**`AppContext`:** on logout call `clearAuth()`.
+
+---
+
+## 12. Adding missing APIs to `api.js`
+
+Copy this block when building assessment / mood features (interceptor adds JWT automatically):
 
 ```javascript
 // ── Mood (Phase 2) ─────────────────────────────────────────────
@@ -607,7 +756,7 @@ Repeat for `session_number` 2 and 3, then `calculateAssessmentScores(userId)`.
 
 ---
 
-## 12. Crisis & safety UI rules
+## 13. Crisis & safety UI rules
 
 When `POST /chat/message` returns `isCrisis: true`:
 
@@ -620,7 +769,7 @@ Backend crisis triggers: keywords + `Suicidal` class confidence ≥ 0.6.
 
 ---
 
-## 13. TTS & avatar integration
+## 14. TTS & avatar integration
 
 ### Current behavior
 
@@ -647,7 +796,7 @@ Not used in current React app — integrate only if demo machine has Wav2Lip con
 
 ---
 
-## 14. Error handling standards
+## 15. Error handling standards
 
 ### Parse FastAPI errors
 
@@ -684,7 +833,7 @@ export const api = axios.create({
 
 ---
 
-## 15. CORS & deployment
+## 16. CORS & deployment
 
 ### Development
 
@@ -710,13 +859,13 @@ Output: `frontend/dist/` — serve via Nginx / Vercel / static host.
 
 ---
 
-## 16. Testing checklist
+## 17. Testing checklist
 
 ### Manual (developer)
 
 - [ ] Backend health: `GET /health`
-- [ ] Register new user → `user.id` received
-- [ ] `GET /auth/session/{id}` → `session.id`
+- [ ] Register with email + password → `accessToken` + `user.id`
+- [ ] `GET /auth/session` with Bearer → `session.id`
 - [ ] Send chat → `aiResponse` + optional `suggestedExercise`
 - [ ] Crisis message → `isCrisis` + helplines
 - [ ] Mood page loads summary + recommendations
@@ -738,7 +887,7 @@ python run_tests.py --verbose
 
 ---
 
-## 17. Troubleshooting
+## 18. Troubleshooting
 
 | Problem | Cause | Fix |
 |---------|--------|-----|
@@ -748,6 +897,9 @@ python run_tests.py --verbose
 | Empty AI reply | No `OPENROUTER_API_KEY` | Add key to `backend/.env` |
 | `WinError 10013` on port 8000 | Port in use | Kill old process or use `--port 8001` and update `VITE_API_BASE_URL` |
 | Session null | User limit 3 sessions | Show session limit banner |
+| **401** on chat/mood | No / expired JWT | Login again; check `sakoon_token` + axios interceptor |
+| **403** on chat | Wrong `userId` or `sessionId` | Must match logged-in user |
+| **409** on register | Email taken | Show "email already registered" |
 | TTS silent | edge-tts / network | `pip install edge-tts`; use browser fallback |
 | History empty | New session, no messages yet | Normal |
 
@@ -762,9 +914,10 @@ API BASE: http://127.0.0.1:8000/api/v1
 UI:       http://127.0.0.1:5173
 DOCS:     http://127.0.0.1:8000/docs
 
-USER FLOW:  register → getSession → chat/message
-STORE:      localStorage sakoon_user { id, name, languagePreference }
-CHAT NEEDS: userId, sessionId, message
+USER FLOW:  register/login → save token → GET /auth/session → chat/message
+STORE:      sakoon_token + sakoon_user { id, name, email, languagePreference }
+HEADERS:    Authorization: Bearer <token> on protected routes
+CHAT NEEDS: userId, sessionId, message (must match token user)
 CRISIS:     if (res.isCrisis) show helplines
 EXTEND API: frontend/src/services/api.js only
 ```
@@ -775,11 +928,12 @@ EXTEND API: frontend/src/services/api.js only
 
 | File | Purpose |
 |------|---------|
-| `backend/API_COMPLETE_TEST_DOCUMENTATION.md` | Every route, headers, JSON samples |
+| `backend/AUTH_JWT_TESTING.md` | JWT auth curl/PowerShell examples |
+| `docs/GIT_AND_BRANCHES.md` | GitHub login, branches, who can push |
+| `backend/API_COMPLETE_TEST_DOCUMENTATION.md` | Every route (update auth sections for JWT) |
 | `backend/TESTING_GUIDE.md` | How to run tests |
 | `backend/MEETING_PRESENTATION_SCRIPT.md` | Viva talking points |
 | `howtorun.txt` | Short run commands |
-| `backend/PUSH_BACKEND_BRANCH.md` | Git push to `Backend_sakoon_Ai` |
 
 ---
 

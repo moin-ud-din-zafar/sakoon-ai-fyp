@@ -10,10 +10,16 @@ alwaysApply: false
 - **Only** add HTTP calls in `frontend/src/services/api.js` using the shared `api` axios instance
 - Base URL: `import.meta.env.VITE_API_BASE_URL` (default `http://localhost:8000/api/v1`)
 
+## Auth (JWT — required since June 2026)
+- Register/login: `email` + `password` (min 8) → store `accessToken` in `localStorage` (`sakoon_token`)
+- Axios interceptor: `Authorization: Bearer ${token}` on protected routes
+- Session: `GET /auth/session` (no userId in URL) — see `docs/FRONTEND_BACKEND_INTEGRATION_GUIDE.md` §7–11
+
 ## State
-- User: `AppContext` + `localStorage` key `sakoon_user` (`id`, `name`, `languagePreference`)
-- Session: `refreshSession()` → `GET /auth/session/{userId}`; map snake_case `user_id` → `userId` in AppContext only
-- Chat: `ChatProvider` needs `userId` + `sessionId`
+- User: `AppContext` + `sakoon_user` (`id`, `name`, `email`, `languagePreference`)
+- Token: `sakoon_token` — clear on logout
+- Session: `refreshSession()` → `getSession()` with Bearer
+- Chat: `ChatProvider` needs `userId` + `sessionId` matching token user
 
 ## UX rules
 - Chat: show loading/typing; responses can take 2–60s

@@ -104,10 +104,13 @@ powershell -ExecutionPolicy Bypass -File .\test_endpoints_manual.ps1 -SkipSlow
 
 ## Frontend integration
 
-1. **Register / login** — store `accessToken` (localStorage or secure cookie).
-2. **Axios/fetch** — set default header: `Authorization: Bearer ${token}`.
-3. Replace name-only login with email + password forms.
-4. Use `GET /auth/session` (not `/auth/session/{userId}`) after login.
+Full handbook: **`docs/FRONTEND_BACKEND_INTEGRATION_GUIDE.md`** (Sections 6–11).
+
+1. **Register / login** — store `accessToken` in `localStorage` (`sakoon_token`).
+2. **Axios interceptor** — `Authorization: Bearer ${token}` on protected routes.
+3. Replace name-only login with **email + password** forms.
+4. Use **`GET /auth/session`** (not `/auth/session/{userId}`) after login.
+5. Copy-paste `api.js` helpers from integration guide Section 11.
 
 ## Common errors
 
