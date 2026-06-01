@@ -36,7 +36,11 @@ $sid = $null
 $aid = $null
 $assignId = $null
 $adminKey = $null
+$token = $null
 $userName = "manual_$(Get-Date -Format 'HHmmss')"
+$userEmail = "manual_$(Get-Date -Format 'yyyyMMddHHmmss')@example.com"
+$userPassword = "TestPass123!"
+$authHdr = @{}
 
 function Step-Header($title) {
     $script:step++
@@ -117,19 +121,30 @@ Test-Call "Health" { Invoke-RestMethod -Uri "$BaseUrl/health" } | Out-Null
 Step-Header "POST /api/v1/auth/register"
 $reg = Test-Call "Register" {
     Invoke-RestMethod -Method POST -Uri "$Api/auth/register" -ContentType $Json `
-        -Body (@{ name = $userName; languagePreference = "en" } | ConvertTo-Json)
+        -Body (@{
+            name                 = $userName
+            email                = $userEmail
+            password             = $userPassword
+            languagePreference   = "en"
+        } | ConvertTo-Json)
 }
-if ($reg) { $uid = $reg.user.id; Write-Host ">>> userId = $uid" -ForegroundColor Magenta }
+if ($reg) {
+    $uid = $reg.user.id
+    $token = $reg.accessToken
+    $authHdr = @{ Authorization = "Bearer $token" }
+    $postHdr = @{ Authorization = "Bearer $token"; "Content-Type" = $Json }
+    Write-Host ">>> userId = $uid" -ForegroundColor Magenta
+}
 
 Step-Header "POST /api/v1/auth/login"
 Test-Call "Login" {
     Invoke-RestMethod -Method POST -Uri "$Api/auth/login" -ContentType $Json `
-        -Body (@{ name = $userName } | ConvertTo-Json)
+        -Body (@{ email = $userEmail; password = $userPassword } | ConvertTo-Json)
 } | Out-Null
 
-Step-Header "GET /api/v1/auth/session/{user_id}"
+Step-Header "GET /api/v1/auth/session (JWT)"
 $sess = Test-Call "Get session" {
-    Invoke-RestMethod -Uri "$Api/auth/session/$uid"
+    Invoke-RestMethod -Uri "$Api/auth/session" -Headers $authHdr
 }
 if ($sess) {
     $sid = $sess.session.id
@@ -145,7 +160,7 @@ if (-not $SkipSlow) {
     Step-Header "POST /api/v1/chat/message (normal)"
     Write-Host "Waiting for LLM (may take 15-60 sec)..." -ForegroundColor Yellow
     $chat = Test-Call "Chat message" {
-        Invoke-RestMethod -Method POST -Uri "$Api/chat/message" -ContentType $Json -TimeoutSec 120 `
+        Invoke-RestMethod -Method POST -Uri "$Api/chat/message" -Headers $postHdr -TimeoutSec 120 `
             -Body (@{
                 userId    = $uid
                 sessionId = $sid
@@ -165,7 +180,7 @@ else {
 Step-Header "POST /api/v1/chat/journal-reflection"
 if (-not $SkipSlow) {
     Test-Call "Journal reflection" {
-        Invoke-RestMethod -Method POST -Uri "$Api/chat/journal-reflection" -ContentType $Json -TimeoutSec 90 `
+        Invoke-RestMethod -Method POST -Uri "$Api/chat/journal-reflection" -Headers $postHdr -TimeoutSec 90 `
             -Body '{"text":"Today I tried breathing when anxious.","language":"en"}'
     } | ForEach-Object { Show-Json $_ }
 }
@@ -180,7 +195,7 @@ else {
 
 Step-Header "GET /api/v1/session/{session_id}/history"
 $hist = Test-Call "Session history" {
-    Invoke-RestMethod -Uri "$Api/session/$sid/history"
+    Invoke-RestMethod -Uri "$Api/session/$sid/history" -Headers $authHdr
 }
 if ($hist) { Show-Json $hist }
 
@@ -190,18 +205,18 @@ if ($hist) { Show-Json $hist }
 
 Step-Header "GET /api/v1/user/{user_id}/mood-summary"
 Test-Call "Mood summary" {
-    Invoke-RestMethod -Uri "$Api/user/$uid/mood-summary"
+    Invoke-RestMethod -Uri "$Api/user/$uid/mood-summary" -Headers $authHdr
 } | ForEach-Object { Show-Json $_ }
 
 Step-Header "GET /api/v1/user/{user_id}/recommendations"
 Test-Call "Recommendations" {
-    Invoke-RestMethod -Uri "$Api/user/$uid/recommendations"
+    Invoke-RestMethod -Uri "$Api/user/$uid/recommendations" -Headers $authHdr
 } | ForEach-Object { Show-Json $_ }
 
 Step-Header "POST /api/v1/user/{user_id}/exercise-feedback"
 if ($assignId) {
     Test-Call "Exercise feedback" {
-        Invoke-RestMethod -Method POST -Uri "$Api/user/$uid/exercise-feedback" -ContentType $Json `
+        Invoke-RestMethod -Method POST -Uri "$Api/user/$uid/exercise-feedback" -Headers $postHdr `
             -Body (@{ assignmentId = $assignId; sessionId = $sid; helped = $true } | ConvertTo-Json)
     } | ForEach-Object { Show-Json $_ }
 }
@@ -216,18 +231,18 @@ else {
 
 Step-Header "POST /api/v1/mood/log"
 Test-Call "Mood log" {
-    Invoke-RestMethod -Method POST -Uri "$Api/mood/log" -ContentType $Json `
+    Invoke-RestMethod -Method POST -Uri "$Api/mood/log" -Headers $postHdr `
         -Body (@{ user_id = $uid; mood_score = 4; note = "manual test" } | ConvertTo-Json)
 } | ForEach-Object { Show-Json $_ }
 
 Step-Header "GET /api/v1/mood/history/{user_id}"
 Test-Call "Mood history" {
-    Invoke-RestMethod -Uri "$Api/mood/history/$uid`?limit=5"
+    Invoke-RestMethod -Uri "$Api/mood/history/$uid`?limit=5" -Headers $authHdr
 } | ForEach-Object { Show-Json $_ }
 
 Step-Header "POST /api/v1/mood/behavior"
 Test-Call "Behavior log" {
-    Invoke-RestMethod -Method POST -Uri "$Api/mood/behavior" -ContentType $Json `
+    Invoke-RestMethod -Method POST -Uri "$Api/mood/behavior" -Headers $postHdr `
         -Body (@{
             user_id             = $uid
             sleep_hours         = 7
@@ -239,7 +254,7 @@ Test-Call "Behavior log" {
 
 Step-Header "GET /api/v1/mood/behavior/{user_id}"
 Test-Call "Behavior history" {
-    Invoke-RestMethod -Uri "$Api/mood/behavior/$uid`?limit=5"
+    Invoke-RestMethod -Uri "$Api/mood/behavior/$uid`?limit=5" -Headers $authHdr
 } | ForEach-Object { Show-Json $_ }
 
 # =============================================================================
@@ -248,7 +263,7 @@ Test-Call "Behavior history" {
 
 function Complete-AssessmentSession {
     param([int]$SessionNumber)
-    $start = Invoke-RestMethod -Method POST -Uri "$Api/assessment/start" -ContentType $Json `
+    $start = Invoke-RestMethod -Method POST -Uri "$Api/assessment/start" -Headers $postHdr `
         -Body (@{ user_id = $uid; session_number = $SessionNumber } | ConvertTo-Json)
     $assessmentId = $start.assessmentId
     Write-Host "assessmentId=$assessmentId session=$SessionNumber" -ForegroundColor Magenta
@@ -258,7 +273,7 @@ function Complete-AssessmentSession {
         $nq = $start.nextQuestion
         if (-not $nq -and $start.status -eq "session_complete") { break }
         if (-not $nq) {
-            $start = Invoke-RestMethod -Uri "$Api/assessment/next/$assessmentId"
+            $start = Invoke-RestMethod -Uri "$Api/assessment/next/$assessmentId" -Headers $authHdr
             $nq = $start.nextQuestion
             if ($start.status -eq "completed" -or -not $nq) { break }
         }
@@ -270,7 +285,7 @@ function Complete-AssessmentSession {
             @{ assessment_id = $assessmentId; question_key = $nq.key; answer_value = $val }
         }
         Write-Host "  answer: $($nq.key)" -ForegroundColor DarkGray
-        $start = Invoke-RestMethod -Method POST -Uri "$Api/assessment/answer" -ContentType $Json `
+        $start = Invoke-RestMethod -Method POST -Uri "$Api/assessment/answer" -Headers $postHdr `
             -Body ($body | ConvertTo-Json)
         if ($start.status -eq "session_complete") { break }
     }
@@ -279,7 +294,7 @@ function Complete-AssessmentSession {
 
 Step-Header "POST /api/v1/assessment/profile"
 Test-Call "Assessment profile" {
-    Invoke-RestMethod -Method POST -Uri "$Api/assessment/profile" -ContentType $Json `
+    Invoke-RestMethod -Method POST -Uri "$Api/assessment/profile" -Headers $postHdr `
         -Body (@{
             user_id        = $uid
             age            = 22
@@ -291,12 +306,12 @@ Test-Call "Assessment profile" {
 
 Step-Header "GET /api/v1/assessment/profile/{user_id}"
 Test-Call "Get profile" {
-    Invoke-RestMethod -Uri "$Api/assessment/profile/$uid"
+    Invoke-RestMethod -Uri "$Api/assessment/profile/$uid" -Headers $authHdr
 } | ForEach-Object { Show-Json $_ }
 
 Step-Header "GET /api/v1/assessment/status/{user_id}"
 Test-Call "Assessment status (before)" {
-    Invoke-RestMethod -Uri "$Api/assessment/status/$uid"
+    Invoke-RestMethod -Uri "$Api/assessment/status/$uid" -Headers $authHdr
 } | ForEach-Object { Show-Json $_ }
 
 foreach ($sn in 1..3) {
@@ -309,17 +324,17 @@ foreach ($sn in 1..3) {
 
 Step-Header "GET /api/v1/assessment/status/{user_id} (after)"
 Test-Call "Assessment status (after)" {
-    Invoke-RestMethod -Uri "$Api/assessment/status/$uid"
+    Invoke-RestMethod -Uri "$Api/assessment/status/$uid" -Headers $authHdr
 } | ForEach-Object { Show-Json $_ }
 
 Step-Header "POST /api/v1/assessment/scores/{user_id}"
 Test-Call "Calculate scores" {
-    Invoke-RestMethod -Method POST -Uri "$Api/assessment/scores/$uid"
+    Invoke-RestMethod -Method POST -Uri "$Api/assessment/scores/$uid" -Headers $authHdr
 } | ForEach-Object { Show-Json $_ }
 
 Step-Header "GET /api/v1/assessment/result/{user_id}"
 Test-Call "Assessment result" {
-    Invoke-RestMethod -Uri "$Api/assessment/result/$uid"
+    Invoke-RestMethod -Uri "$Api/assessment/result/$uid" -Headers $authHdr
 } | ForEach-Object { Show-Json $_ }
 
 # =============================================================================
@@ -329,7 +344,7 @@ Test-Call "Assessment result" {
 if (-not $SkipSlow) {
     Step-Header "POST /api/v1/chat/message (CRISIS test)"
     $crisis = Test-Call "Crisis chat" {
-        Invoke-RestMethod -Method POST -Uri "$Api/chat/message" -ContentType $Json -TimeoutSec 120 `
+        Invoke-RestMethod -Method POST -Uri "$Api/chat/message" -Headers $postHdr -TimeoutSec 120 `
             -Body (@{
                 userId    = $uid
                 sessionId = $sid

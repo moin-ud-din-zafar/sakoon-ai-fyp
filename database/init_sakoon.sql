@@ -17,11 +17,14 @@ USE sakoon;
 CREATE TABLE IF NOT EXISTS users (
     id                  INT PRIMARY KEY AUTO_INCREMENT,
     name                VARCHAR(100) NOT NULL,
+    email               VARCHAR(255) NOT NULL UNIQUE,
+    password_hash       VARCHAR(255) NOT NULL,
     language_preference VARCHAR(10) DEFAULT 'en',
     total_sessions      INT DEFAULT 0,
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_users_language (language_preference)
+    INDEX idx_users_language (language_preference),
+    INDEX idx_users_email (email)
 );
 
 -- ============================================

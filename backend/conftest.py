@@ -26,8 +26,27 @@ def base_url() -> str:
 
 
 @pytest.fixture(scope="session")
-def client(base_url: str) -> httpx.Client:
-    with httpx.Client(base_url=base_url, timeout=API_TIMEOUT) as c:
+def client(base_url: str, state: SakoonTestState) -> httpx.Client:
+    def _attach_bearer(request: httpx.Request) -> None:
+        if not state.access_token:
+            return
+        path = request.url.path or ""
+        # Do not send user JWT to public auth, admin, or health routes
+        skip_prefixes = (
+            "/health",
+            "/api/v1/auth/register",
+            "/api/v1/auth/login",
+            "/api/v1/admin/",
+        )
+        if path == "/" or any(path.startswith(p) for p in skip_prefixes):
+            return
+        request.headers["Authorization"] = f"Bearer {state.access_token}"
+
+    with httpx.Client(
+        base_url=base_url,
+        timeout=API_TIMEOUT,
+        event_hooks={"request": [_attach_bearer]},
+    ) as c:
         assert_server_up(c)
         yield c
 

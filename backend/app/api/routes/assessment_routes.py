@@ -14,9 +14,10 @@ Endpoints:
 import logging
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.api.deps import get_current_user, require_assessment_access, require_user_id
 from app.services.assessment_service import (
     calculate_scores,
     get_assessment_status,
@@ -66,15 +67,21 @@ class AnswerIn(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.post("/profile", summary="Save patient intake profile")
-def save_profile(body: PatientProfileIn) -> Dict[str, Any]:
-    _assert_user_exists(body.user_id)
+def save_profile(
+    body: PatientProfileIn,
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    require_user_id(current_user, body.user_id)
     upsert_patient_profile(body.user_id, body.model_dump(exclude={"user_id"}))
     return {"ok": True, "message": "Profile saved."}
 
 
 @router.get("/profile/{user_id}", summary="Get patient profile")
-def get_profile(user_id: int) -> Dict[str, Any]:
-    _assert_user_exists(user_id)
+def get_profile(
+    user_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    require_user_id(current_user, user_id)
     profile = get_patient_profile(user_id)
     return {"profile": profile}
 
@@ -84,8 +91,11 @@ def get_profile(user_id: int) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/status/{user_id}", summary="Get assessment completion status")
-def assessment_status(user_id: int) -> Dict[str, Any]:
-    _assert_user_exists(user_id)
+def assessment_status(
+    user_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    require_user_id(current_user, user_id)
     return get_assessment_status(user_id)
 
 
@@ -94,8 +104,11 @@ def assessment_status(user_id: int) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.post("/start", summary="Start or resume an assessment session")
-def start(body: StartAssessmentIn) -> Dict[str, Any]:
-    _assert_user_exists(body.user_id)
+def start(
+    body: StartAssessmentIn,
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    require_user_id(current_user, body.user_id)
     try:
         result = start_assessment(body.user_id, body.session_number)
     except ValueError as exc:
@@ -104,7 +117,11 @@ def start(body: StartAssessmentIn) -> Dict[str, Any]:
 
 
 @router.get("/next/{assessment_id}", summary="Get next question for an assessment")
-def next_question(assessment_id: int) -> Dict[str, Any]:
+def next_question(
+    assessment_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    require_assessment_access(assessment_id, current_user["id"])
     try:
         return get_next_question(assessment_id)
     except ValueError as exc:
@@ -112,7 +129,11 @@ def next_question(assessment_id: int) -> Dict[str, Any]:
 
 
 @router.post("/answer", summary="Submit an answer")
-def answer(body: AnswerIn) -> Dict[str, Any]:
+def answer(
+    body: AnswerIn,
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    require_assessment_access(body.assessment_id, current_user["id"])
     if body.answer_value is None and not body.answer_text:
         raise HTTPException(
             status_code=422,
@@ -134,8 +155,11 @@ def answer(body: AnswerIn) -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.post("/scores/{user_id}", summary="Calculate and store assessment scores")
-def scores(user_id: int) -> Dict[str, Any]:
-    _assert_user_exists(user_id)
+def scores(
+    user_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    require_user_id(current_user, user_id)
     status = get_assessment_status(user_id)
     if not status["allComplete"]:
         incomplete = [s for s in (1, 2, 3) if s not in status["completedSessions"]]
@@ -150,8 +174,11 @@ def scores(user_id: int) -> Dict[str, Any]:
 
 
 @router.get("/result/{user_id}", summary="Get stored assessment result")
-def result(user_id: int) -> Dict[str, Any]:
-    _assert_user_exists(user_id)
+def result(
+    user_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    require_user_id(current_user, user_id)
     row = get_assessment_result(user_id)
     if not row:
         raise HTTPException(

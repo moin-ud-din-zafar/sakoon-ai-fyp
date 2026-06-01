@@ -20,8 +20,11 @@ from qa_helpers import (
     ADMIN_PASSWORD,
     ADMIN_USERNAME,
     CRISIS_KEYWORD_SAMPLE,
+    DEFAULT_TEST_PASSWORD,
     SakoonTestState,
+    apply_auth_from_response,
     complete_assessment_session,
+    register_payload,
 )
 
 pytestmark = [pytest.mark.regression]
@@ -35,77 +38,90 @@ pytestmark = [pytest.mark.regression]
 @pytest.mark.smoke
 @pytest.mark.critical
 class TestAuth:
-  """User registration, login, and session bootstrap."""
+  """User registration, login (email + password), JWT, and session bootstrap."""
 
   def test_01_register_new_user_success(self, client, state: SakoonTestState):
-    """POST /auth/register with valid name returns 200 and user object with id."""
+    """POST /auth/register returns JWT and user with id."""
     r = client.post(
       "/api/v1/auth/register",
-      json={"name": state.user_name, "languagePreference": "en"},
+      json=register_payload(state.user_name, state.email, state.password),
     )
     assert r.status_code == 200, r.text
     body = r.json()
+    assert body.get("accessToken")
+    assert body.get("tokenType") == "bearer"
     assert "user" in body
     assert body["user"]["id"] > 0
     assert body["user"]["name"] == state.user_name
-    state.user_id = body["user"]["id"]
+    assert body["user"].get("email") == state.email
+    apply_auth_from_response(state, body)
 
-  def test_02_register_duplicate_name(self, client, state: SakoonTestState):
-    """Duplicate names are allowed — API creates a second user (no 400)."""
-    r1 = client.post(
-      "/api/v1/auth/register",
-      json={"name": state.duplicate_name, "languagePreference": "en"},
-    )
-    r2 = client.post(
-      "/api/v1/auth/register",
-      json={"name": state.duplicate_name, "languagePreference": "en"},
-    )
+  def test_02_register_duplicate_email(self, client, state: SakoonTestState):
+    """Duplicate email returns 409."""
+    dup_name = f"dup_user_{state_suffix()}"
+    payload = register_payload(dup_name, state.duplicate_email, state.password)
+    r1 = client.post("/api/v1/auth/register", json=payload)
+    r2 = client.post("/api/v1/auth/register", json=payload)
     assert r1.status_code == 200
-    assert r2.status_code == 200
-    assert r1.json()["user"]["id"] != r2.json()["user"]["id"]
+    assert r2.status_code == 409
+    assert "email" in r2.json().get("detail", "").lower()
 
-  def test_03_register_missing_name(self, client):
-    """Missing required name field returns 422 validation error."""
-    r = client.post("/api/v1/auth/register", json={"languagePreference": "en"})
+  def test_03_register_missing_fields(self, client):
+    """Missing email/password returns 422."""
+    r = client.post(
+      "/api/v1/auth/register",
+      json={"name": "only_name", "languagePreference": "en"},
+    )
     assert r.status_code == 422
-    detail = r.json().get("detail")
-    assert detail is not None
+    assert r.json().get("detail") is not None
 
   def test_04_register_with_language_preference(self, client):
     """languagePreference ur is persisted on the user record."""
+    suffix = state_suffix()
     r = client.post(
       "/api/v1/auth/register",
-      json={"name": f"ur_user_{state_suffix()}", "languagePreference": "ur"},
+      json=register_payload(
+        f"ur_user_{suffix}",
+        f"ur_{suffix}@example.com",
+        DEFAULT_TEST_PASSWORD,
+        "ur",
+      ),
     )
     assert r.status_code == 200
     assert r.json()["user"]["languagePreference"] == "ur"
 
   def test_05_login_existing_user(self, client, state: SakoonTestState):
-    """POST /auth/login returns the same user id for a registered name."""
+    """POST /auth/login returns same user id and a new JWT."""
     assert state.user_id is not None
-    r = client.post("/api/v1/auth/login", json={"name": state.user_name})
-    assert r.status_code == 200
-    assert r.json()["user"]["id"] == state.user_id
-    assert r.json()["user"]["name"] == state.user_name
-
-  def test_06_login_nonexistent_user(self, client):
-    """Unknown username returns 404."""
     r = client.post(
       "/api/v1/auth/login",
-      json={"name": "no_such_user_zzzz_99999"},
+      json={"email": state.email, "password": state.password},
     )
-    assert r.status_code == 404
-    assert "not found" in r.json().get("detail", "").lower()
+    assert r.status_code == 200
+    body = r.json()
+    assert body["user"]["id"] == state.user_id
+    assert body.get("accessToken")
+    apply_auth_from_response(state, body)
+
+  def test_06_login_invalid_credentials(self, client):
+    """Wrong email/password returns 401."""
+    r = client.post(
+      "/api/v1/auth/login",
+      json={"email": "nobody@example.com", "password": "WrongPass99!"},
+    )
+    assert r.status_code == 401
+    assert "invalid" in r.json().get("detail", "").lower()
 
   def test_07_login_empty_body(self, client):
-    """Login without name returns 422."""
+    """Login without email/password returns 422."""
     r = client.post("/api/v1/auth/login", json={})
     assert r.status_code == 422
 
   def test_08_get_session_valid_user(self, client, state: SakoonTestState):
-    """GET /auth/session/{user_id} returns active session and ids."""
+    """GET /auth/session (JWT) returns active session and ids."""
     assert state.user_id is not None
-    r = client.get(f"/api/v1/auth/session/{state.user_id}")
+    assert state.access_token
+    r = client.get("/api/v1/auth/session")
     assert r.status_code == 200
     data = r.json()
     assert data.get("session") is not None
@@ -229,11 +245,11 @@ class TestSession:
     roles = {m["role"] for m in msgs}
     assert "user" in roles and "assistant" in roles
 
-  def test_16_get_invalid_session(self, client):
-    """Unknown session id returns 200 with empty messages (no 404)."""
+  def test_16_get_invalid_session(self, client, state: SakoonTestState):
+    """Unknown session id returns 403 (not owned by user)."""
+    assert state.access_token
     r = client.get("/api/v1/session/999999/history")
-    assert r.status_code == 200
-    assert r.json().get("messages", []) == []
+    assert r.status_code == 403
 
 
 # ---------------------------------------------------------------------------
@@ -253,11 +269,11 @@ class TestUser:
     assert "trend" in data
     assert isinstance(data["summary"], list)
 
-  def test_18_mood_summary_invalid_user(self, client):
-    """Unknown user returns empty summary (200), not 404."""
+  def test_18_mood_summary_wrong_user(self, client, state: SakoonTestState):
+    """Another user's id returns 403."""
+    assert state.access_token
     r = client.get("/api/v1/user/999999/mood-summary")
-    assert r.status_code == 200
-    assert r.json().get("summary", []) == []
+    assert r.status_code == 403
 
   def test_19_get_recommendations(self, client, state: SakoonTestState):
     """GET recommendations returns array (may include exercises from chat)."""
@@ -434,19 +450,31 @@ class TestAssessment:
 
   def test_35_complete_session_1_all_answers(self, client, state: SakoonTestState):
     """Finish all session 1 questions until completed."""
-    aid, ok = complete_assessment_session(client, state.user_id, 1)
+    from qa_helpers import auth_headers
+
+    aid, ok = complete_assessment_session(
+      client, state.user_id, 1, headers=auth_headers(state)
+    )
     assert ok, "Session 1 did not complete"
     state.assessment_id = aid
 
   def test_36_complete_session_2(self, client, state: SakoonTestState):
     """Complete PHQ-9 + GAD-7 session."""
-    aid, ok = complete_assessment_session(client, state.user_id, 2)
+    from qa_helpers import auth_headers
+
+    aid, ok = complete_assessment_session(
+      client, state.user_id, 2, headers=auth_headers(state)
+    )
     assert ok, "Session 2 did not complete"
     state.assessment_id = aid
 
   def test_37_complete_session_3(self, client, state: SakoonTestState):
     """Complete behavioral session."""
-    aid, ok = complete_assessment_session(client, state.user_id, 3)
+    from qa_helpers import auth_headers
+
+    aid, ok = complete_assessment_session(
+      client, state.user_id, 3, headers=auth_headers(state)
+    )
     assert ok, "Session 3 did not complete"
     state.assessment_id = aid
 

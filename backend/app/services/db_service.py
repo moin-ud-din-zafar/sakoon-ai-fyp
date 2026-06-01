@@ -28,6 +28,8 @@ def _init_sqlite_schema(conn: sqlite3.Connection):
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name VARCHAR(100) NOT NULL,
+            email VARCHAR(255) NOT NULL UNIQUE,
+            password_hash VARCHAR(255) NOT NULL,
             language_preference VARCHAR(10) DEFAULT 'en',
             total_sessions INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -158,7 +160,45 @@ def _init_sqlite_schema(conn: sqlite3.Connection):
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
     """)
+    _migrate_sqlite_auth_columns(conn)
     conn.commit()
+
+
+def _migrate_sqlite_auth_columns(conn: sqlite3.Connection) -> None:
+    """Add email/password_hash to existing SQLite DBs created before JWT auth."""
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(users)")
+    cols = {row[1] for row in cur.fetchall()}
+    if "email" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN email VARCHAR(255)")
+    if "password_hash" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)")
+    conn.commit()
+
+
+_mysql_auth_migrated = False
+
+
+def _migrate_mysql_auth_columns(conn) -> None:
+    """Add email/password_hash to existing MySQL DBs created before JWT auth."""
+    global _mysql_auth_migrated
+    if _mysql_auth_migrated:
+        return
+    cur = conn.cursor()
+    cur.execute("SHOW COLUMNS FROM users LIKE 'email'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE users ADD COLUMN email VARCHAR(255) NULL")
+    cur.execute("SHOW COLUMNS FROM users LIKE 'password_hash'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NULL")
+    try:
+        cur.execute(
+            "CREATE UNIQUE INDEX idx_users_email ON users (email)"
+        )
+    except Exception:
+        pass
+    conn.commit()
+    _mysql_auth_migrated = True
 
 
 @contextmanager
@@ -173,6 +213,7 @@ def get_db() -> Generator:
             conn.close()
     else:
         conn = mysql.connector.connect(**MYSQL_CONFIG)
+        _migrate_mysql_auth_columns(conn)
         try:
             yield conn
             conn.commit()
@@ -223,12 +264,23 @@ def execute_insert(query: str, params: tuple = ()) -> int:
 # --- CRUD operations ---
 
 def create_user(name: str, language_preference: str = "en") -> int:
-    """Create user and return id."""
+    """Deprecated: use create_user_account. Kept for internal compatibility."""
+    raise RuntimeError("create_user is deprecated; use create_user_account with email and password")
+
+
+def create_user_account(
+    name: str,
+    email: str,
+    password_hash: str,
+    language_preference: str = "en",
+) -> int:
+    """Create user with email and hashed password; return new user id."""
+    clean_email = email.strip().lower()
     return execute_insert(
-        "INSERT INTO users (name, language_preference) VALUES (?, ?)"
+        "INSERT INTO users (name, email, password_hash, language_preference) VALUES (?, ?, ?, ?)"
         if USE_SQLITE
-        else "INSERT INTO users (name, language_preference) VALUES (%s, %s)",
-        (name, language_preference),
+        else "INSERT INTO users (name, email, password_hash, language_preference) VALUES (%s, %s, %s, %s)",
+        (name.strip(), clean_email, password_hash, language_preference),
     )
 
 
@@ -240,17 +292,32 @@ def get_user(user_id: int) -> Optional[Dict[str, Any]]:
     )
 
 
-def get_user_by_name(name: str) -> Optional[Dict[str, Any]]:
-    """Get first user matching name (case-insensitive trim). For returning-user login."""
-    clean = (name or "").strip()
+def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    """Get user by email (case-insensitive)."""
+    clean = (email or "").strip().lower()
     if not clean:
         return None
     return execute_one(
-        "SELECT * FROM users WHERE LOWER(TRIM(name)) = LOWER(?) LIMIT 1"
+        "SELECT * FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1"
         if USE_SQLITE
-        else "SELECT * FROM users WHERE LOWER(TRIM(name)) = LOWER(%s) LIMIT 1",
+        else "SELECT * FROM users WHERE LOWER(TRIM(email)) = %s LIMIT 1",
         (clean,),
     )
+
+
+def email_exists(email: str) -> bool:
+    return get_user_by_email(email) is not None
+
+
+def session_belongs_to_user(session_id: int, user_id: int) -> bool:
+    """True if session exists and belongs to user."""
+    row = execute_one(
+        "SELECT user_id FROM sessions WHERE id = ?" if USE_SQLITE else "SELECT user_id FROM sessions WHERE id = %s",
+        (session_id,),
+    )
+    if not row:
+        return False
+    return int(row.get("user_id") or row["user_id"]) == int(user_id)
 
 
 def get_or_create_session(user_id: int) -> tuple:
@@ -700,6 +767,13 @@ def get_assessment(assessment_id: int) -> Optional[Dict[str, Any]]:
     return execute_one(
         f"SELECT * FROM assessments WHERE id = {p}", (assessment_id,)
     )
+
+
+def assessment_belongs_to_user(assessment_id: int, user_id: int) -> bool:
+    row = get_assessment(assessment_id)
+    if not row:
+        return False
+    return int(row.get("user_id") or row["user_id"]) == int(user_id)
 
 
 def get_latest_assessment_for_user(user_id: int, session_number: int) -> Optional[Dict[str, Any]]:

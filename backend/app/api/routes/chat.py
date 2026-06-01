@@ -7,7 +7,7 @@ import re
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from app.api.deps import get_classifier
+from app.api.deps import get_classifier, get_current_user, require_session_access, require_user_id
 from app.services.classifier_service import MentalHealthClassifier
 from app.services.risk_detector_service import RiskDetector
 from app.services.llm_service import (
@@ -139,12 +139,21 @@ def _detect_emotion(text: str, mh_class: str) -> str:
 
 
 @router.post("/message")
-def send_message(req: ChatRequest, classifier: MentalHealthClassifier = Depends(get_classifier)):
+def send_message(
+    req: ChatRequest,
+    current_user: dict = Depends(get_current_user),
+    classifier: MentalHealthClassifier = Depends(get_classifier),
+):
     """
     Process user message: classify, risk check, LLM response, store.
+  Requires Authorization: Bearer <JWT>. userId in body must match token.
     """
+    require_user_id(current_user, req.userId)
+    require_session_access(req.sessionId, current_user["id"])
+    user_id = int(current_user["id"])
+
     if not req.message or not req.message.strip():
-        u0 = get_user(req.userId) if req.userId else None
+        u0 = get_user(user_id)
         lp = (u0.get("language_preference") or "en") if u0 else "en"
         if str(lp).lower().strip()[:2] == "ur":
             empty_reply = (
@@ -174,7 +183,7 @@ def send_message(req: ChatRequest, classifier: MentalHealthClassifier = Depends(
     is_crisis = risk_result["is_crisis"]
     risk_level = risk_result["risk_level"]
 
-    user = get_user(req.userId)
+    user = get_user(user_id)
     lang_pref = (user.get("language_preference") or "en") if user else "en"
     language = _normalize_reply_language(lang_pref)
     if _normalize_reply_language(lang_pref) == "en":
@@ -203,7 +212,7 @@ def send_message(req: ChatRequest, classifier: MentalHealthClassifier = Depends(
     # Merge HF emotion with local MH classifier for richer emotion label
     emotion = hf_emotion_result.get("emotion") or _detect_emotion(req.message, mh_class)
 
-    recent_turns = get_recent_session_turns(req.sessionId, limit=5)
+    recent_turns = get_recent_session_turns(req.sessionId, limit=5)  # noqa: session verified
     memory_text = format_conversation_memory(recent_turns)
 
     ai_response = generate_response(
@@ -222,10 +231,10 @@ def send_message(req: ChatRequest, classifier: MentalHealthClassifier = Depends(
     recs_compact: list = []
 
     if not is_crisis:
-        mood_summary = get_mood_summary(req.userId)
+        mood_summary = get_mood_summary(user_id)
         trend = compute_trend(mood_summary)
-        recent_types = get_recent_assignment_types(req.userId, limit=8)
-        recent_titles = get_recent_assignment_titles(req.userId, limit=6)
+        recent_types = get_recent_assignment_types(user_id, limit=8)
+        recent_titles = get_recent_assignment_titles(user_id, limit=6)
 
         use_llm = (
             mh_class not in ("Normal", "Suicidal")
@@ -258,7 +267,7 @@ def send_message(req: ChatRequest, classifier: MentalHealthClassifier = Depends(
             )
             internal["source"] = "library"
 
-        aid = save_exercise_assignment(req.userId, internal)
+        aid = save_exercise_assignment(user_id, internal)
         prefer_urdu = language in ("ur", "urdu")
         suggested_exercise = exercise_to_api_payload(
             internal, source, assignment_id=aid, prefer_urdu=prefer_urdu
@@ -304,7 +313,10 @@ def send_message(req: ChatRequest, classifier: MentalHealthClassifier = Depends(
 
 
 @router.post("/journal-reflection")
-def journal_reflection(req: JournalReflectRequest):
+def journal_reflection(
+    req: JournalReflectRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """Gentle 2–3 line reflection on coping journal entry (Roman Urdu / English)."""
     text = (req.text or "").strip()
     if not text:

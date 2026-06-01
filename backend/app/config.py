@@ -36,6 +36,11 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 HF_TOKEN = os.getenv("HF_TOKEN", "")
 HF_CHAT_MODEL = os.getenv("HF_CHAT_MODEL", "mistralai/Mistral-7B-Instruct-v0.3")
 
+# JWT (user authentication)
+JWT_SECRET = os.getenv("JWT_SECRET", "change-me-sakoon-jwt-secret-in-production")
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "1440"))  # 24 hours
+
 # Admin
 ADMIN_KEY = os.getenv("ADMIN_KEY", "sakoon-admin-secret-change-in-prod")
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")

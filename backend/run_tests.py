@@ -32,9 +32,12 @@ from qa_helpers import (
     BASE_URL,
     API_TIMEOUT,
     CRISIS_KEYWORD_SAMPLE,
+    DEFAULT_TEST_PASSWORD,
     SakoonTestState,
     answer_payload,
+    apply_auth_from_response,
     complete_assessment_session,
+    register_payload,
 )
 
 # ANSI colors (Windows 10+ supports)
@@ -198,72 +201,73 @@ class SequentialRunner:
         self._run("Health", "GET", "/health", expect=(200,))
 
         # Auth 01-08
-        def _save_user_id(body, _):
-            uid = body.get("user", {}).get("id")
-            assert uid, "missing user.id"
-            s.user_id = uid
+        def _save_auth(body, _):
+            apply_auth_from_response(s, body)
+            assert s.user_id, "missing user.id"
+            assert s.access_token, "missing accessToken"
+            self.session.headers["Authorization"] = f"Bearer {s.access_token}"
 
         self._run(
             "test_01_register_new_user_success",
             "POST",
             "/api/v1/auth/register",
-            json_body={"name": s.user_name, "languagePreference": "en"},
-            assert_fn=_save_user_id,
+            json_body=register_payload(s.user_name, s.email, s.password),
+            assert_fn=_save_auth,
         )
 
-        dup_ids: List[int] = []
-
-        def _dup_collect(body, _):
-            uid = body.get("user", {}).get("id")
-            assert uid
-            dup_ids.append(uid)
-
-        self._run(
-            "test_02_register_duplicate_name",
-            "POST",
-            "/api/v1/auth/register",
-            json_body={"name": s.duplicate_name, "languagePreference": "en"},
-            assert_fn=_dup_collect,
-        )
-        def _dup_second(body, resp):
-            _dup_collect(body, resp)
-            assert len(dup_ids) == 2 and dup_ids[0] != dup_ids[1]
-
-        self._run(
-            "test_02_register_duplicate_name_second",
-            "POST",
-            "/api/v1/auth/register",
-            json_body={"name": s.duplicate_name, "languagePreference": "en"},
-            assert_fn=_dup_second,
+        dup_payload = register_payload(
+            f"dup_{uuid.uuid4().hex[:6]}",
+            s.duplicate_email,
+            s.password,
         )
 
         self._run(
-            "test_03_register_missing_name",
+            "test_02_register_duplicate_email_first",
             "POST",
             "/api/v1/auth/register",
-            json_body={"languagePreference": "en"},
+            json_body=dup_payload,
+            expect=(200,),
+        )
+        self._run(
+            "test_02_register_duplicate_email_second",
+            "POST",
+            "/api/v1/auth/register",
+            json_body=dup_payload,
+            expect=(409,),
+        )
+
+        self._run(
+            "test_03_register_missing_fields",
+            "POST",
+            "/api/v1/auth/register",
+            json_body={"name": "only_name", "languagePreference": "en"},
             expect=(422,),
         )
         self._run(
             "test_04_register_with_language_preference",
             "POST",
             "/api/v1/auth/register",
-            json_body={"name": f"ur_{uuid.uuid4().hex[:8]}", "languagePreference": "ur"},
+            json_body=register_payload(
+                f"ur_{uuid.uuid4().hex[:8]}",
+                f"ur_{uuid.uuid4().hex[:8]}@example.com",
+                DEFAULT_TEST_PASSWORD,
+                "ur",
+            ),
             assert_fn=lambda b, _: b["user"]["languagePreference"] == "ur",
         )
         self._run(
             "test_05_login_existing_user",
             "POST",
             "/api/v1/auth/login",
-            json_body={"name": s.user_name},
-            assert_fn=lambda b, _: b["user"]["id"] == s.user_id,
+            json_body={"email": s.email, "password": s.password},
+            assert_fn=lambda b, _: b["user"]["id"] == s.user_id and b.get("accessToken"),
         )
         self._run(
-            "test_06_login_nonexistent_user",
+            "test_06_login_invalid_credentials",
             "POST",
             "/api/v1/auth/login",
-            json_body={"name": "ghost_user_99999"},
-            expect=(404,),
+            json_body={"email": "ghost@example.com", "password": "WrongPass99!"},
+            expect=(401,),
         )
         self._run(
             "test_07_login_empty_body",
@@ -279,7 +283,7 @@ class SequentialRunner:
         self._run(
             "test_08_get_session_valid_user",
             "GET",
-            f"/api/v1/auth/session/{s.user_id}",
+            "/api/v1/auth/session",
             assert_fn=_save_session,
         )
 
@@ -354,7 +358,7 @@ class SequentialRunner:
             "test_16_get_invalid_session",
             "GET",
             "/api/v1/session/999999/history",
-            assert_fn=lambda b, _: b.get("messages", []) == [],
+            expect=(403,),
         )
 
         # User 17-20
@@ -365,10 +369,10 @@ class SequentialRunner:
             assert_fn=lambda b, _: "summary" in b and "trend" in b,
         )
         self._run(
-            "test_18_mood_summary_invalid_user",
+            "test_18_mood_summary_wrong_user",
             "GET",
             "/api/v1/user/999999/mood-summary",
-            assert_fn=lambda b, _: b.get("summary", []) == [],
+            expect=(403,),
         )
         rec = self._run(
             "test_19_get_recommendations",

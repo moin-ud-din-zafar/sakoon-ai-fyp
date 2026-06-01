@@ -13,6 +13,7 @@ BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "sakoon123")
 API_TIMEOUT = float(os.getenv("API_TEST_TIMEOUT", "120"))
+DEFAULT_TEST_PASSWORD = os.getenv("TEST_USER_PASSWORD", "TestPass123!")
 
 # From app/core/constants.py
 CRISIS_KEYWORD_SAMPLE = "I have been thinking about suicide and want to end my life"
@@ -27,8 +28,76 @@ class SakoonTestState:
     assessment_id: Optional[int] = None
     assignment_id: Optional[int] = None
     admin_key: Optional[str] = None
+    access_token: Optional[str] = None
     user_name: str = field(default_factory=lambda: f"pytest_{uuid.uuid4().hex[:10]}")
-    duplicate_name: str = field(default_factory=lambda: f"dup_{uuid.uuid4().hex[:8]}")
+    email: str = field(default_factory=lambda: f"pytest_{uuid.uuid4().hex[:10]}@example.com")
+    password: str = field(default_factory=lambda: DEFAULT_TEST_PASSWORD)
+    duplicate_email: str = field(
+        default_factory=lambda: f"dup_{uuid.uuid4().hex[:8]}@example.com"
+    )
+
+
+def auth_headers(state: SakoonTestState) -> Dict[str, str]:
+    """Authorization header for protected routes."""
+    if not state.access_token:
+        return {}
+    return {"Authorization": f"Bearer {state.access_token}"}
+
+
+def register_payload(
+    name: str,
+    email: str,
+    password: str = DEFAULT_TEST_PASSWORD,
+    language: str = "en",
+) -> Dict[str, Any]:
+    return {
+        "name": name,
+        "email": email,
+        "password": password,
+        "languagePreference": language,
+    }
+
+
+def apply_auth_from_response(state: SakoonTestState, body: Dict[str, Any]) -> None:
+    """Store user id and JWT from register/login response."""
+    state.access_token = body.get("accessToken")
+    user = body.get("user") or {}
+    if user.get("id"):
+        state.user_id = user["id"]
+
+
+def register_and_login(
+    client: httpx.Client,
+    state: SakoonTestState,
+    *,
+    name: Optional[str] = None,
+    email: Optional[str] = None,
+    password: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Register a new user and set state token + user_id. Returns response JSON."""
+    payload = register_payload(
+        name or state.user_name,
+        email or state.email,
+        password or state.password,
+    )
+    r = client.post("/api/v1/auth/register", json=payload)
+    if r.status_code != 200:
+        raise RuntimeError(f"Register failed {r.status_code}: {r.text}")
+    body = r.json()
+    apply_auth_from_response(state, body)
+    return body
+
+
+def fetch_session(client: httpx.Client, state: SakoonTestState) -> Dict[str, Any]:
+    """GET /auth/session (JWT) and set state.session_id."""
+    r = client.get("/api/v1/auth/session", headers=auth_headers(state))
+    if r.status_code != 200:
+        raise RuntimeError(f"Session failed {r.status_code}: {r.text}")
+    data = r.json()
+    sess = data.get("session")
+    if sess and sess.get("id"):
+        state.session_id = sess["id"]
+    return data
 
 
 def assert_server_up(client: httpx.Client) -> None:
@@ -64,14 +133,17 @@ def complete_assessment_session(
     user_id: int,
     session_number: int,
     max_steps: int = 100,
+    headers: Optional[Dict[str, str]] = None,
 ) -> Tuple[int, bool]:
     """
     Start assessment session and answer every question until completed.
     Returns (assessment_id, success).
     """
+    hdrs = headers or {}
     start = client.post(
         "/api/v1/assessment/start",
         json={"user_id": user_id, "session_number": session_number},
+        headers=hdrs,
     )
     if start.status_code != 200:
         return 0, False
@@ -81,7 +153,7 @@ def complete_assessment_session(
         return 0, False
 
     for _ in range(max_steps):
-        nxt = client.get(f"/api/v1/assessment/next/{aid}")
+        nxt = client.get(f"/api/v1/assessment/next/{aid}", headers=hdrs)
         if nxt.status_code != 200:
             return aid, False
         payload = nxt.json()
@@ -91,6 +163,7 @@ def complete_assessment_session(
         ans = client.post(
             "/api/v1/assessment/answer",
             json=answer_payload(aid, q),
+            headers=hdrs,
         )
         if ans.status_code != 200:
             return aid, False

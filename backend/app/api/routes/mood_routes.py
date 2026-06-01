@@ -10,9 +10,10 @@ Endpoints:
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.api.deps import get_current_user, require_user_id
 from app.services.db_service import (
     add_behavior_log,
     add_mood_log,
@@ -54,8 +55,11 @@ class BehaviorLogIn(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.post("/log", summary="Add a manual mood log entry")
-def log_mood(body: MoodLogIn) -> Dict[str, Any]:
-    _assert_user_exists(body.user_id)
+def log_mood(
+    body: MoodLogIn,
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    require_user_id(current_user, body.user_id)
     entry_id = add_mood_log(body.user_id, body.mood_score, body.note)
     return {
         "ok": True,
@@ -65,8 +69,12 @@ def log_mood(body: MoodLogIn) -> Dict[str, Any]:
 
 
 @router.get("/history/{user_id}", summary="Get mood history for a user")
-def mood_history(user_id: int, limit: int = 30) -> Dict[str, Any]:
-    _assert_user_exists(user_id)
+def mood_history(
+    user_id: int,
+    limit: int = 30,
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    require_user_id(current_user, user_id)
     rows = get_mood_history(user_id, limit=min(limit, 90))
     return {
         "userId": user_id,
@@ -91,8 +99,11 @@ _VALID_SOCIAL = {"isolated", "minimal", "moderate", "active"}
 
 
 @router.post("/behavior", summary="Log daily behavior data")
-def log_behavior(body: BehaviorLogIn) -> Dict[str, Any]:
-    _assert_user_exists(body.user_id)
+def log_behavior(
+    body: BehaviorLogIn,
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    require_user_id(current_user, body.user_id)
 
     if body.physical_activity and body.physical_activity not in _VALID_ACTIVITY:
         raise HTTPException(
@@ -122,8 +133,12 @@ def log_behavior(body: BehaviorLogIn) -> Dict[str, Any]:
 
 
 @router.get("/behavior/{user_id}", summary="Get behavior history for a user")
-def behavior_history(user_id: int, limit: int = 30) -> Dict[str, Any]:
-    _assert_user_exists(user_id)
+def behavior_history(
+    user_id: int,
+    limit: int = 30,
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    require_user_id(current_user, user_id)
     rows = get_behavior_history(user_id, limit=min(limit, 90))
     return {
         "userId": user_id,
