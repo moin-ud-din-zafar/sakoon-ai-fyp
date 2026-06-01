@@ -1,0 +1,17 @@
+# Secrets — never push
+backend/.env
+**/.env
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+.venv/
+venv/
+
+# Local test artifacts
+backend/manual_test_tts.mp3
+backend/manual_test_output.txt
+*.rar
+
+# Large optional (uncomment if push fails)
+# wav2lip/

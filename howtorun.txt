@@ -1,0 +1,17 @@
+Open TWO terminals.
+
+Terminal 1 — backend (API):
+cd "e:\Ai Virtual Assistant\backend"
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+
+Terminal 2 — frontend (browser UI):
+cd "e:\Ai Virtual Assistant\frontend"
+npm run dev
+
+Then open: http://127.0.0.1:5173/
+API health: http://127.0.0.1:8000/health
+
+Keep both windows open while testing. Stop with Ctrl+C in each.
+
+Developer integration guide (frontend + backend):
+docs/FRONTEND_BACKEND_INTEGRATION_GUIDE.md

@@ -1,0 +1,30 @@
+---
+description: Testing commands and git safety for Sakoon AI
+globs: backend/**/*
+alwaysApply: false
+---
+
+# Testing & Git
+
+## Manual API test
+```cmd
+cd backend
+powershell -ExecutionPolicy Bypass -File test_endpoints_manual.ps1 -SkipSlow
+```
+
+## Automated
+```cmd
+python run_tests.py --verbose
+pytest test_complete.py -v
+```
+
+## Before push
+- Never stage `backend/.env` or secrets
+- Confirm `backend/models/*.joblib` if classifier needed
+- Backend branch for FYP repo: `Backend_sakoon_Ai` → `sakoon` remote
+
+## Git remotes
+- `origin` — personal Proj repo
+- `sakoon` — https://github.com/moin-ud-din-zafar/sakoon-ai-fyp.git
+
+Do not force-push `main` without explicit user request.

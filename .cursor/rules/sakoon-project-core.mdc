@@ -1,0 +1,28 @@
+---
+description: Sakoon AI monorepo overview, run commands, and global conventions
+alwaysApply: true
+---
+
+# Sakoon AI — Project Core
+
+## Layout
+- `backend/` — FastAPI API (`/api/v1`), services, ML models in `backend/models/`
+- `frontend/` — React + Vite; API client in `frontend/src/services/api.js`
+- `database/init_sakoon.sql` — MySQL schema
+- `docs/FRONTEND_BACKEND_INTEGRATION_GUIDE.md` — frontend↔backend handbook
+
+## Run (dev)
+- Backend: `cd backend && python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`
+- Frontend: `cd frontend && npm run dev` → http://127.0.0.1:5173
+- Health: http://127.0.0.1:8000/health
+
+## Never commit
+- `backend/.env`, `frontend/.env`, API keys, PATs, passwords
+
+## Auth model (prototype)
+- No JWT for users. Pass `userId` and `sessionId` in request bodies after register/login.
+- Admin routes need header `X-Admin-Key` from `POST /admin/login`.
+
+## Docs before guessing APIs
+- `backend/API_COMPLETE_TEST_DOCUMENTATION.md`
+- `backend/ROUTE_DOCUMENTATION.md`

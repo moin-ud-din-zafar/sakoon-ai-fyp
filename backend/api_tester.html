@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sakoon AI API Tester</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --panel: #161b22;
+      --panel2: #21262d;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --blue: #388bfd;
+      --red: #f85149;
+      --yellow: #d29922;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; }
+    header {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--border);
+    }
+    header h1 { margin: 0; font-size: 1rem; flex: 1; min-width: 140px; }
+    header input, header button {
+      background: var(--bg); border: 1px solid var(--border); color: var(--text);
+      padding: 6px 10px; border-radius: 6px; font-size: 0.8rem;
+    }
+    header button { cursor: pointer; background: var(--panel2); }
+    header button:hover { border-color: var(--accent); }
+    header button.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+    header button.run-all { background: #238636; border-color: #238636; color: #fff; }
+    .grid {
+      flex: 1; display: grid;
+      grid-template-columns: 260px 1fr 1fr;
+      grid-template-rows: 1fr auto;
+      min-height: 0;
+    }
+    @media (max-width: 1200px) { .grid { grid-template-columns: 1fr; grid-template-rows: auto auto auto auto; } }
+    aside {
+      grid-row: 1 / 3; overflow-y: auto; background: var(--panel);
+      border-right: 1px solid var(--border);
+    }
+    .group { padding: 8px 0 4px; font-size: 0.65rem; text-transform: uppercase; color: var(--muted); padding-left: 12px; }
+    .ep {
+      display: block; width: 100%; text-align: left; padding: 7px 12px;
+      border: none; background: transparent; color: var(--text); cursor: pointer;
+      font-size: 0.8rem; border-left: 3px solid transparent;
+    }
+    .ep:hover { background: rgba(88,166,255,0.08); }
+    .ep.active { background: rgba(88,166,255,0.15); border-left-color: var(--accent); }
+    .badge { font-size: 0.62rem; font-weight: 700; padding: 2px 5px; border-radius: 4px; margin-right: 6px; }
+    .badge.GET { background: rgba(63,185,80,0.2); color: var(--green); }
+    .badge.POST { background: rgba(56,139,253,0.2); color: var(--blue); }
+    .request, .response { padding: 12px; overflow-y: auto; border-right: 1px solid var(--border); }
+    .response { border-right: none; }
+    h2 { margin: 0 0 10px; font-size: 0.9rem; }
+    .url-row { display: flex; gap: 8px; margin-bottom: 10px; }
+    .url-row select { width: 88px; }
+    .url-row input { flex: 1; }
+    .tabs { display: flex; gap: 4px; margin-bottom: 8px; }
+    .tab {
+      padding: 6px 12px; border: 1px solid var(--border); background: var(--panel2);
+      color: var(--muted); border-radius: 6px 6px 0 0; cursor: pointer; font-size: 0.75rem;
+    }
+    .tab.active { color: var(--text); border-bottom-color: var(--panel); background: var(--bg); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    textarea, input[type="text"] {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      color: var(--text); padding: 8px; border-radius: 6px;
+      font-family: "Cascadia Code", Consolas, monospace; font-size: 0.78rem;
+    }
+    textarea { min-height: 160px; resize: vertical; }
+    .meta { display: flex; gap: 12px; margin-bottom: 8px; font-size: 0.8rem; flex-wrap: wrap; }
+    .status-ok { color: var(--green); }
+    .status-err { color: var(--red); }
+    pre.out {
+      background: var(--bg); border: 1px solid var(--border); padding: 10px;
+      border-radius: 6px; overflow: auto; max-height: 55vh; font-size: 0.75rem;
+      white-space: pre-wrap; word-break: break-word; margin: 0;
+    }
+    .state-bar {
+      grid-column: 1 / -1; padding: 8px 14px; background: var(--panel);
+      border-top: 1px solid var(--border); font-size: 0.75rem;
+      display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+    }
+    .state-bar code { background: var(--bg); padding: 2px 6px; border-radius: 4px; }
+    .state-bar button { font-size: 0.7rem; padding: 2px 6px; }
+    .history { max-height: 120px; overflow-y: auto; border-top: 1px solid var(--border); }
+    .hist-item { padding: 6px 12px; font-size: 0.72rem; cursor: pointer; border-bottom: 1px solid var(--border); }
+    .hist-item:hover { background: var(--panel2); }
+    #runLog { max-height: 200px; overflow-y: auto; font-size: 0.72rem; margin-top: 8px; }
+    .log-pass { color: var(--green); }
+    .log-fail { color: var(--red); }
+    .log-warn { color: var(--yellow); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Sakoon AI API Tester</h1>
+    <label>Base <input type="text" id="baseUrl" value="http://127.0.0.1:8000" style="width:200px" /></label>
+    <button type="button" id="btnFillUser">Auto userId</button>
+    <button type="button" id="btnFillSession">Auto sessionId</button>
+    <button type="button" id="btnAdminLogin">Admin login</button>
+    <button type="button" class="run-all" id="btnRunAll">Run All Tests</button>
+    <button type="button" class="primary" id="btnSend">SEND</button>
+  </header>
+
+  <div class="grid">
+    <aside>
+      <div id="endpointList"></div>
+      <div class="history" id="historyList"></div>
+    </aside>
+
+    <div class="request">
+      <h2>Request</h2>
+      <div class="url-row">
+        <select id="method"><option>GET</option><option>POST</option></select>
+        <input type="text" id="path" placeholder="/api/v1/..." />
+      </div>
+      <div class="tabs">
+        <button class="tab" data-tab="params">Params</button>
+        <button class="tab active" data-tab="headers">Headers</button>
+        <button class="tab" data-tab="body">Body</button>
+      </div>
+      <div class="tab-panel" id="panel-params">
+        <textarea id="params" rows="4" placeholder="Query string, e.g. limit=30"></textarea>
+      </div>
+      <div class="tab-panel active" id="panel-headers">
+        <textarea id="headers">{}</textarea>
+      </div>
+      <div class="tab-panel" id="panel-body">
+        <textarea id="body" placeholder="JSON body for POST"></textarea>
+      </div>
+    </div>
+
+    <div class="response">
+      <h2>Response</h2>
+      <div class="meta">
+        <span id="resStatus">—</span>
+        <span id="resTime">—</span>
+        <button type="button" id="btnCopy">Copy response</button>
+      </div>
+      <pre class="out" id="responseOut">Select an endpoint and click SEND.</pre>
+      <div id="runLog"></div>
+    </div>
+
+    <div class="state-bar">
+      <span>userId: <code id="stUserId">—</code> <button type="button" data-clear="userId">clear</button></span>
+      <span>sessionId: <code id="stSessionId">—</code> <button type="button" data-clear="sessionId">clear</button></span>
+      <span>assessmentId: <code id="stAssessmentId">—</code> <button type="button" data-clear="assessmentId">clear</button></span>
+      <span>adminKey: <code id="stAdminKey">—</code> <button type="button" data-clear="adminKey">clear</button></span>
+      <span style="color:var(--muted)">Auth: name-based users; admin uses X-Admin-Key (not JWT)</span>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const store = {
+      get userId() { return localStorage.getItem("sakoon_userId") || ""; },
+      set userId(v) { localStorage.setItem("sakoon_userId", v); refreshState(); },
+      get sessionId() { return localStorage.getItem("sakoon_sessionId") || ""; },
+      set sessionId(v) { localStorage.setItem("sakoon_sessionId", v); refreshState(); },
+      get assessmentId() { return localStorage.getItem("sakoon_assessmentId") || ""; },
+      set assessmentId(v) { localStorage.setItem("sakoon_assessmentId", v); refreshState(); },
+      get adminKey() { return localStorage.getItem("sakoon_adminKey") || ""; },
+      set adminKey(v) { localStorage.setItem("sakoon_adminKey", v); refreshState(); },
+    };
+
+    const endpoints = [
+      { g: "System", items: [
+        { n: "Root", m: "GET", p: "/" },
+        { n: "Health", m: "GET", p: "/health" },
+      ]},
+      { g: "Auth", items: [
+        { n: "Register", m: "POST", p: "/api/v1/auth/register", b: { name: "demo_user", languagePreference: "en" }, saveUser: 1 },
+        { n: "Login", m: "POST", p: "/api/v1/auth/login", b: { name: "demo_user" }, saveUser: 1 },
+        { n: "Get session", m: "GET", p: "/api/v1/auth/session/{{userId}}", saveSession: 1 },
+      ]},
+      { g: "Chat", items: [
+        { n: "Message", m: "POST", p: "/api/v1/chat/message", b: { userId: "{{userId}}", sessionId: "{{sessionId}}", message: "I feel stressed." } },
+        { n: "Crisis test", m: "POST", p: "/api/v1/chat/message", b: { userId: "{{userId}}", sessionId: "{{sessionId}}", message: "I want to end my life" } },
+        { n: "Journal", m: "POST", p: "/api/v1/chat/journal-reflection", b: { text: "Today was hard.", language: "en" } },
+      ]},
+      { g: "Session", items: [
+        { n: "History", m: "GET", p: "/api/v1/session/{{sessionId}}/history" },
+      ]},
+      { g: "User", items: [
+        { n: "Mood summary", m: "GET", p: "/api/v1/user/{{userId}}/mood-summary" },
+        { n: "Recommendations", m: "GET", p: "/api/v1/user/{{userId}}/recommendations" },
+        { n: "Exercise feedback", m: "POST", p: "/api/v1/user/{{userId}}/exercise-feedback", b: { assignmentId: 1, sessionId: "{{sessionId}}", helped: true } },
+      ]},
+      { g: "Mood", items: [
+        { n: "Log mood", m: "POST", p: "/api/v1/mood/log", b: { user_id: "{{userId}}", mood_score: 4, note: "ok" } },
+        { n: "Mood history", m: "GET", p: "/api/v1/mood/history/{{userId}}" },
+        { n: "Log behavior", m: "POST", p: "/api/v1/mood/behavior", b: { user_id: "{{userId}}", sleep_hours: 7, physical_activity: "light", social_interaction: "moderate" } },
+        { n: "Behavior history", m: "GET", p: "/api/v1/mood/behavior/{{userId}}" },
+      ]},
+      { g: "Assessment", items: [
+        { n: "Save profile", m: "POST", p: "/api/v1/assessment/profile", b: { user_id: "{{userId}}", age: 25, gender: "other" } },
+        { n: "Get profile", m: "GET", p: "/api/v1/assessment/profile/{{userId}}" },
+        { n: "Status", m: "GET", p: "/api/v1/assessment/status/{{userId}}" },
+        { n: "Start S1", m: "POST", p: "/api/v1/assessment/start", b: { user_id: "{{userId}}", session_number: 1 }, saveAssessment: 1 },
+        { n: "Next question", m: "GET", p: "/api/v1/assessment/next/{{assessmentId}}" },
+        { n: "Answer", m: "POST", p: "/api/v1/assessment/answer", b: { assessment_id: "{{assessmentId}}", question_key: "s1_current_feeling", answer_text: "Tired" } },
+        { n: "Scores", m: "POST", p: "/api/v1/assessment/scores/{{userId}}" },
+        { n: "Result", m: "GET", p: "/api/v1/assessment/result/{{userId}}" },
+      ]},
+      { g: "TTS", items: [
+        { n: "Speak EN", m: "POST", p: "/api/v1/tts/speak", b: { text: "Hello Sakoon", language: "en" }, binary: 1 },
+        { n: "Speak UR", m: "POST", p: "/api/v1/tts/speak", b: { text: "Salam", language: "ur" }, binary: 1 },
+      ]},
+      { g: "Avatar", items: [
+        { n: "Status", m: "GET", p: "/api/v1/avatar/status" },
+        { n: "Speak", m: "POST", p: "/api/v1/avatar/speak", b: { text: "Hello", language: "en" }, binary: 1 },
+      ]},
+      { g: "Admin", admin: 1, items: [
+        { n: "Login", m: "POST", p: "/api/v1/admin/login", b: { username: "admin", password: "sakoon123" }, saveAdmin: 1 },
+        { n: "Stats", m: "GET", p: "/api/v1/admin/stats", admin: 1 },
+        { n: "Sessions", m: "GET", p: "/api/v1/admin/sessions", admin: 1 },
+        { n: "Session logs", m: "GET", p: "/api/v1/admin/sessions/{{sessionId}}/logs", admin: 1 },
+        { n: "Crisis alerts", m: "GET", p: "/api/v1/admin/crisis-alerts", admin: 1 },
+      ]},
+    ];
+
+    let currentEp = null;
+    const history = [];
+
+    function sub(s) {
+      return String(s)
+        .replace(/\{\{userId\}\}/g, store.userId || "1")
+        .replace(/\{\{sessionId\}\}/g, store.sessionId || "1")
+        .replace(/\{\{assessmentId\}\}/g, store.assessmentId || "1");
+    }
+
+    function refreshState() {
+      $("stUserId").textContent = store.userId || "—";
+      $("stSessionId").textContent = store.sessionId || "—";
+      $("stAssessmentId").textContent = store.assessmentId || "—";
+      $("stAdminKey").textContent = store.adminKey ? store.adminKey.slice(0, 12) + "…" : "—";
+    }
+
+    function buildSidebar() {
+      const list = $("endpointList");
+      list.innerHTML = "";
+      endpoints.forEach((grp) => {
+        const gt = document.createElement("div");
+        gt.className = "group";
+        gt.textContent = grp.g;
+        list.appendChild(gt);
+        grp.items.forEach((ep) => {
+          const btn = document.createElement("button");
+          btn.className = "ep";
+          btn.innerHTML = `<span class="badge ${ep.m}">${ep.m}</span>${ep.n}`;
+          btn.onclick = () => selectEp(ep, btn);
+          list.appendChild(btn);
+        });
+      });
+    }
+
+    function selectEp(ep, btnEl) {
+      document.querySelectorAll(".ep").forEach((b) => b.classList.remove("active"));
+      btnEl.classList.add("active");
+      currentEp = ep;
+      $("method").value = ep.m;
+      $("path").value = sub(ep.p);
+      $("body").value = ep.b ? JSON.stringify(subObj(ep.b), null, 2) : "";
+      const hdrs = {};
+      if (ep.admin || ep.saveAdmin) {
+        if (store.adminKey) hdrs["X-Admin-Key"] = store.adminKey;
+      }
+      $("headers").value = JSON.stringify(hdrs, null, 2);
+    }
+
+    function subObj(o) {
+      const s = sub(JSON.stringify(o));
+      return JSON.parse(s);
+    }
+
+    document.querySelectorAll(".tab").forEach((tab) => {
+      tab.onclick = () => {
+        document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+        document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+        tab.classList.add("active");
+        $("panel-" + tab.dataset.tab).classList.add("active");
+      };
+    });
+
+    function applyResponse(ep, data, res, ms) {
+      if (ep?.saveUser && data?.user?.id) store.userId = String(data.user.id);
+      if (ep?.saveSession && data?.session?.id) store.sessionId = String(data.session.id);
+      if (ep?.saveAssessment && data?.assessmentId) store.assessmentId = String(data.assessmentId);
+      if (ep?.saveAdmin && data?.adminKey) { store.adminKey = data.adminKey; }
+    }
+
+    async function sendOnce(epOverride) {
+      const ep = epOverride || currentEp;
+      const base = $("baseUrl").value.replace(/\/$/, "");
+      const method = $("method").value;
+      let path = sub($("path").value);
+      const qs = $("params").value.trim();
+      if (qs && method === "GET") path += (path.includes("?") ? "&" : "?") + qs;
+      const url = base + path;
+      let headers = {};
+      try { headers = JSON.parse($("headers").value || "{}"); } catch (e) {
+        $("responseOut").textContent = "Invalid headers JSON";
+        return null;
+      }
+      if (path.includes("/admin/") && store.adminKey && !headers["X-Admin-Key"])
+        headers["X-Admin-Key"] = store.adminKey;
+      const opts = { method, headers };
+      const body = $("body").value.trim();
+      if (body && method !== "GET") {
+        headers["Content-Type"] = headers["Content-Type"] || "application/json";
+        opts.body = body;
+        opts.headers = headers;
+      } else {
+        opts.headers = headers;
+      }
+      const t0 = performance.now();
+      try {
+        const res = await fetch(url, opts);
+        const ms = Math.round(performance.now() - t0);
+        const ct = res.headers.get("content-type") || "";
+        let out, data = null;
+        if (ct.includes("json")) {
+          data = await res.json();
+          out = JSON.stringify(data, null, 2);
+        } else if (ct.includes("audio") || ct.includes("video")) {
+          const buf = await res.arrayBuffer();
+          out = `Binary ${buf.byteLength} bytes\nContent-Type: ${ct}\nX-Avatar-Mode: ${res.headers.get("x-avatar-mode") || "n/a"}`;
+        } else {
+          out = await res.text();
+        }
+        $("resStatus").innerHTML = res.ok
+          ? `<span class="status-ok">${res.status} ${res.statusText}</span>`
+          : `<span class="status-err">${res.status} ${res.statusText}</span>`;
+        $("resTime").textContent = ms + " ms";
+        $("responseOut").textContent = out;
+        if (ep) applyResponse(ep, data, res, ms);
+        addHistory(method, path, res.status, ms);
+        return { ok: res.ok, status: res.status, data };
+      } catch (err) {
+        $("resStatus").innerHTML = `<span class="status-err">Network error</span>`;
+        $("responseOut").textContent = String(err);
+        return { ok: false, status: 0 };
+      }
+    }
+
+    function addHistory(method, path, status, ms) {
+      history.unshift({ method, path, status, ms, t: new Date().toLocaleTimeString() });
+      if (history.length > 10) history.pop();
+      $("historyList").innerHTML = history.map((h) =>
+        `<div class="hist-item">${h.t} <span class="badge ${h.method}">${h.method}</span> ${h.status} ${h.path}</div>`
+      ).join("");
+    }
+
+    $("btnSend").onclick = () => sendOnce();
+    $("btnCopy").onclick = () => navigator.clipboard.writeText($("responseOut").textContent);
+
+    $("btnFillUser").onclick = () => {
+      if (store.userId) $("path").value = sub($("path").value);
+    };
+    $("btnFillSession").onclick = () => {
+      if (store.sessionId) $("path").value = sub($("path").value);
+    };
+
+    $("btnAdminLogin").onclick = async () => {
+      const base = $("baseUrl").value.replace(/\/$/, "");
+      const res = await fetch(base + "/api/v1/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: "admin", password: "sakoon123" }),
+      });
+      const data = await res.json();
+      if (data.adminKey) {
+        store.adminKey = data.adminKey;
+        $("headers").value = JSON.stringify({ "X-Admin-Key": data.adminKey }, null, 2);
+      }
+      $("responseOut").textContent = JSON.stringify(data, null, 2);
+    };
+
+    async function quickRegisterSession() {
+      const base = $("baseUrl").value.replace(/\/$/, "");
+      const name = "ui_" + Date.now().toString(36);
+      const reg = await fetch(base + "/api/v1/auth/register", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, languagePreference: "en" }),
+      });
+      const regData = await reg.json();
+      store.userId = String(regData.user.id);
+      const sess = await fetch(base + `/api/v1/auth/session/${regData.user.id}`);
+      const sessData = await sess.json();
+      if (sessData.session) store.sessionId = String(sessData.session.id);
+      return { regData, sessData };
+    }
+
+    $("btnRunAll").onclick = async () => {
+      const log = $("runLog");
+      log.innerHTML = "<div>Running smoke sequence…</div>";
+      await quickRegisterSession();
+      const sequence = [
+        endpoints[0].items[1],
+        endpoints[1].items[2],
+        endpoints[2].items[0],
+        endpoints[3].items[0],
+        endpoints[4].items[0],
+        endpoints[5].items[0],
+        endpoints[6].items[0],
+        endpoints[9].items[0],
+      ];
+      let pass = 0, fail = 0;
+      for (const ep of sequence) {
+        selectEp(ep, document.createElement("button"));
+        $("method").value = ep.m;
+        $("path").value = sub(ep.p);
+        $("body").value = ep.b ? JSON.stringify(subObj(ep.b), null, 2) : "";
+        const r = await sendOnce(ep);
+        const line = document.createElement("div");
+        if (r && r.ok) { line.className = "log-pass"; line.textContent = `PASS ${ep.m} ${ep.p}`; pass++; }
+        else { line.className = "log-fail"; line.textContent = `FAIL ${ep.m} ${ep.p}`; fail++; }
+        log.appendChild(line);
+      }
+      const sum = document.createElement("div");
+      sum.textContent = `Done: ${pass} passed, ${fail} failed`;
+      log.appendChild(sum);
+    };
+
+    document.querySelectorAll("[data-clear]").forEach((btn) => {
+      btn.onclick = () => {
+        localStorage.removeItem("sakoon_" + btn.dataset.clear);
+        refreshState();
+      };
+    });
+
+    $("baseUrl").value = localStorage.getItem("sakoon_baseUrl") || $("baseUrl").value;
+    $("baseUrl").onchange = () => localStorage.setItem("sakoon_baseUrl", $("baseUrl").value);
+
+    buildSidebar();
+    refreshState();
+    document.querySelector(".ep")?.click();
+  </script>
+</body>
+</html>

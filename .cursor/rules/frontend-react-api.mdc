@@ -1,0 +1,38 @@
+---
+description: React frontend and API integration conventions
+globs: frontend/**/*.{jsx,js,tsx,ts}
+alwaysApply: false
+---
+
+# Frontend (React + Vite)
+
+## API calls
+- **Only** add HTTP calls in `frontend/src/services/api.js` using the shared `api` axios instance
+- Base URL: `import.meta.env.VITE_API_BASE_URL` (default `http://localhost:8000/api/v1`)
+
+## Auth (JWT — required since June 2026)
+- Register/login: `email` + `password` (min 8) → store `accessToken` in `localStorage` (`sakoon_token`)
+- Axios interceptor: `Authorization: Bearer ${token}` on protected routes
+- Session: `GET /auth/session` (no userId in URL) — see `docs/FRONTEND_BACKEND_INTEGRATION_GUIDE.md` §7–11
+
+## State
+- User: `AppContext` + `sakoon_user` (`id`, `name`, `email`, `languagePreference`)
+- Token: `sakoon_token` — clear on logout
+- Session: `refreshSession()` → `getSession()` with Bearer
+- Chat: `ChatProvider` needs `userId` + `sessionId` matching token user
+
+## UX rules
+- Chat: show loading/typing; responses can take 2–60s
+- `isCrisis: true` → show `CrisisSupportPanel`; do not push exercises as primary CTA
+- `isLimitReached` → block chat (`SessionLimitBanner`)
+
+## Not wired yet (add via api.js)
+- Assessment routes under `/assessment/*`
+- Mood log/behavior under `/mood/*`
+- See `docs/FRONTEND_BACKEND_INTEGRATION_GUIDE.md` Section 11 for copy-paste helpers
+
+## Errors
+```javascript
+const detail = err?.response?.data?.detail;
+const msg = typeof detail === "string" ? detail : "Request failed";
+```
