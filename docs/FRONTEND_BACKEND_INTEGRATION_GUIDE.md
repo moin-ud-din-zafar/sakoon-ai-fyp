@@ -220,6 +220,11 @@ If frontend shows network errors, backend is usually not running or wrong `VITE_
 | `JWT_SECRET` | **Yes (prod)** | Sign user tokens — long random string |
 | `JWT_ALGORITHM` | No | Default `HS256` |
 | `JWT_EXPIRE_MINUTES` | No | Default `10080` (7 days) |
+| `RESET_TOKEN_EXPIRE_MINUTES` | No | Forgot-password token expiry (minutes) |
+| `RESET_PASSWORD_BASE_URL` | Yes for FE reset page | e.g. `http://localhost:5173/reset-password` |
+| `UPLOAD_DIR` / `MAX_PROFILE_IMAGE_MB` | No | Local fallback storage + max size |
+| `CLOUDINARY_NAME` / `CLOUDINARY_KEY` / `CLOUDINARY_SECRET` | Recommended | Profile images on Cloudinary CDN |
+| `SMTP_*` | Optional (required to send real emails) | Forgot-password mail delivery |
 | `TTS_PROVIDER` | No | `edge` (default) |
 
 ### Frontend (`frontend/.env`)
@@ -473,6 +478,9 @@ GET  /mood/behavior/{userId}
 | `POST /auth/register` | ⚠️ **Update UI** | Needs `email` + `password`; save `accessToken` |
 | `POST /auth/login` | ⚠️ **Update UI** | Email + password; save `accessToken` |
 | `GET /auth/me` | ❌ optional | Profile page |
+| `PATCH /auth/change-password` | ❌ | Settings page |
+| `POST /auth/forgot-password` | ❌ | Forgot password form |
+| `POST /auth/reset-password` | ❌ | Reset password form |
 | `GET /auth/session` | ⚠️ **Update** | Was `/auth/session/{userId}` — now JWT only |
 | `POST /chat/message` | ✅ | `ChatContext.sendMessage` |
 | `GET /session/{id}/history` | ✅ | `ChatContext` useEffect |
@@ -480,6 +488,7 @@ GET  /mood/behavior/{userId}
 | `GET /user/{id}/mood-summary` | ✅ | `MoodDashboardPage.jsx` |
 | `GET /user/{id}/recommendations` | ✅ | `MoodDashboardPage`, `ExercisesPage` |
 | `POST /user/{id}/exercise-feedback` | ✅ | `ExerciseRunner.jsx` |
+| `POST /user/{id}/profile-image` | ❌ | Settings/Profile image upload |
 | `POST /tts/speak` | ✅ | `TTSContext.jsx` (fetch blob) |
 | Admin routes | ✅ | `AdminDashboardPage.jsx` |
 | `POST /mood/log` | ❌ | Add to `api.js` + JWT interceptor |
@@ -934,6 +943,7 @@ EXTEND API: frontend/src/services/api.js only
 | File | Purpose |
 |------|---------|
 | `backend/AUTH_JWT_TESTING.md` | JWT auth curl/PowerShell examples |
+| `docs/API_PAYLOAD_SYNTAX.md` | Full payloads incl. settings/password reset |
 | `docs/GIT_AND_BRANCHES.md` | GitHub login, branches, who can push |
 | `backend/API_COMPLETE_TEST_DOCUMENTATION.md` | Every route (update auth sections for JWT) |
 | `backend/TESTING_GUIDE.md` | How to run tests |

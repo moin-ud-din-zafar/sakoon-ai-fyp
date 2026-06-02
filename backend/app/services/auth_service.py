@@ -55,6 +55,7 @@ def user_to_public(user: Dict[str, Any]) -> Dict[str, Any]:
         "id": user["id"],
         "name": user["name"],
         "email": user.get("email") or "",
+        "profileImageUrl": user.get("profile_image_url") or "",
         "languagePreference": user.get("language_preference", "en"),
         "totalSessions": user.get("total_sessions", 0),
         "createdAt": str(user.get("created_at", "")),

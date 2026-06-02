@@ -1,8 +1,10 @@
 """Database service for Sakoon AI. Uses SQLite for dev, MySQL for production."""
 
 import json
+import hashlib
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional
 
@@ -30,6 +32,7 @@ def _init_sqlite_schema(conn: sqlite3.Connection):
             name VARCHAR(100) NOT NULL,
             email VARCHAR(255) NOT NULL UNIQUE,
             password_hash VARCHAR(255) NOT NULL,
+            profile_image_url TEXT,
             language_preference VARCHAR(10) DEFAULT 'en',
             total_sessions INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -159,13 +162,24 @@ def _init_sqlite_schema(conn: sqlite3.Connection):
             logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
+
+        -- Password reset tokens
+        CREATE TABLE IF NOT EXISTS password_resets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token_hash VARCHAR(128) NOT NULL UNIQUE,
+            expires_at TIMESTAMP NOT NULL,
+            used_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
     """)
     _migrate_sqlite_auth_columns(conn)
     conn.commit()
 
 
 def _migrate_sqlite_auth_columns(conn: sqlite3.Connection) -> None:
-    """Add email/password_hash to existing SQLite DBs created before JWT auth."""
+    """Add auth/profile columns to existing SQLite DBs created before JWT auth."""
     cur = conn.cursor()
     cur.execute("PRAGMA table_info(users)")
     cols = {row[1] for row in cur.fetchall()}
@@ -173,6 +187,21 @@ def _migrate_sqlite_auth_columns(conn: sqlite3.Connection) -> None:
         cur.execute("ALTER TABLE users ADD COLUMN email VARCHAR(255)")
     if "password_hash" not in cols:
         cur.execute("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)")
+    if "profile_image_url" not in cols:
+        cur.execute("ALTER TABLE users ADD COLUMN profile_image_url TEXT")
+    cur.execute(
+        """CREATE TABLE IF NOT EXISTS password_resets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token_hash VARCHAR(128) NOT NULL UNIQUE,
+            expires_at TIMESTAMP NOT NULL,
+            used_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )"""
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_password_resets_expires ON password_resets(expires_at)")
     conn.commit()
 
 
@@ -180,7 +209,7 @@ _mysql_auth_migrated = False
 
 
 def _migrate_mysql_auth_columns(conn) -> None:
-    """Add email/password_hash to existing MySQL DBs created before JWT auth."""
+    """Add auth/profile/reset tables to existing MySQL DBs created before JWT auth."""
     global _mysql_auth_migrated
     if _mysql_auth_migrated:
         return
@@ -191,12 +220,28 @@ def _migrate_mysql_auth_columns(conn) -> None:
     cur.execute("SHOW COLUMNS FROM users LIKE 'password_hash'")
     if not cur.fetchone():
         cur.execute("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NULL")
+    cur.execute("SHOW COLUMNS FROM users LIKE 'profile_image_url'")
+    if not cur.fetchone():
+        cur.execute("ALTER TABLE users ADD COLUMN profile_image_url TEXT NULL")
     try:
         cur.execute(
             "CREATE UNIQUE INDEX idx_users_email ON users (email)"
         )
     except Exception:
         pass
+    cur.execute(
+        """CREATE TABLE IF NOT EXISTS password_resets (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            user_id INT NOT NULL,
+            token_hash VARCHAR(128) NOT NULL UNIQUE,
+            expires_at DATETIME NOT NULL,
+            used_at DATETIME NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_password_resets_user (user_id),
+            INDEX idx_password_resets_expires (expires_at),
+            CONSTRAINT fk_password_resets_user FOREIGN KEY (user_id) REFERENCES users(id)
+        )"""
+    )
     conn.commit()
     _mysql_auth_migrated = True
 
@@ -307,6 +352,87 @@ def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
 
 def email_exists(email: str) -> bool:
     return get_user_by_email(email) is not None
+
+
+def update_user_password(user_id: int, password_hash: str) -> None:
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+            if USE_SQLITE
+            else "UPDATE users SET password_hash = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+            (password_hash, user_id),
+        )
+
+
+def update_user_profile_image(user_id: int, image_url: str) -> None:
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE users SET profile_image_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+            if USE_SQLITE
+            else "UPDATE users SET profile_image_url = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+            (image_url, user_id),
+        )
+
+
+def _hash_reset_token(raw_token: str) -> str:
+    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+
+def create_password_reset_token(user_id: int, raw_token: str, expires_at: datetime) -> None:
+    token_hash = _hash_reset_token(raw_token)
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE password_resets SET used_at = CURRENT_TIMESTAMP WHERE user_id = ? AND used_at IS NULL"
+            if USE_SQLITE
+            else "UPDATE password_resets SET used_at = CURRENT_TIMESTAMP WHERE user_id = %s AND used_at IS NULL",
+            (user_id,),
+        )
+    execute_insert(
+        "INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES (?, ?, ?)"
+        if USE_SQLITE
+        else "INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES (%s, %s, %s)",
+        (user_id, token_hash, expires_at.replace(tzinfo=None)),
+    )
+
+
+def get_valid_password_reset(raw_token: str) -> Optional[Dict[str, Any]]:
+    token_hash = _hash_reset_token(raw_token)
+    row = execute_one(
+        """SELECT * FROM password_resets
+           WHERE token_hash = ? AND used_at IS NULL
+           ORDER BY id DESC LIMIT 1"""
+        if USE_SQLITE
+        else """SELECT * FROM password_resets
+           WHERE token_hash = %s AND used_at IS NULL
+           ORDER BY id DESC LIMIT 1""",
+        (token_hash,),
+    )
+    if not row:
+        return None
+    expires = row.get("expires_at")
+    if not expires:
+        return None
+    if isinstance(expires, str):
+        expires = datetime.fromisoformat(expires.replace(" ", "T"))
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) >= expires:
+        return None
+    return row
+
+
+def mark_password_reset_used(reset_id: int) -> None:
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE password_resets SET used_at = CURRENT_TIMESTAMP WHERE id = ?"
+            if USE_SQLITE
+            else "UPDATE password_resets SET used_at = CURRENT_TIMESTAMP WHERE id = %s",
+            (reset_id,),
+        )
 
 
 def session_belongs_to_user(session_id: int, user_id: int) -> bool:
