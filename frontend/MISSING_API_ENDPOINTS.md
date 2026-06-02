@@ -14,10 +14,10 @@
 | Method | Endpoint | Purpose | Affected UI |
 |--------|----------|---------|-------------|
 | `PATCH` | `/auth/profile` | Update name, languagePreference | Settings → General Preferences |
-| `POST` | `/auth/change-password` | Change user password (requires current + new password) | Settings → Account → Change Password modal |
-| `POST` | `/auth/forgot-password` | Send password reset link to email | Forgot Password page → Send Link button |
-| `POST` | `/auth/reset-password` | Confirm reset with token + new password | (needed after forgot-password flow) |
-| `POST` | `/auth/profile/avatar` | Upload user profile picture | Settings → Avatar circle (currently shows initials only) |
+| ~~`POST`~~ | ~~`/auth/change-password`~~ | ✅ **Integrated** — `PATCH /auth/change-password` | Settings → Change Password modal |
+| ~~`POST`~~ | ~~`/auth/forgot-password`~~ | ✅ **Integrated** — `POST /auth/forgot-password` | Forgot Password page |
+| ~~`POST`~~ | ~~`/auth/reset-password`~~ | ✅ **Integrated** — `POST /auth/reset-password` | `/reset-password?token=…` page |
+| ~~`POST`~~ | ~~`/auth/profile/avatar`~~ | ✅ **Integrated** — `POST /user/{id}/profile-image` | Settings → avatar click-to-upload |
 
 ---
 

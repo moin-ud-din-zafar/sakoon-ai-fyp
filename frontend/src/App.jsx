@@ -11,6 +11,7 @@ import SummaryPage        from "./pages/SummaryPage";
 import MoodTrackerPage    from "./pages/MoodTrackerPage";
 import PsychoeducationPage from "./pages/PsychoeducationPage";
 import SettingPage        from "./pages/SettingPage";
+import ResetPasswordPage  from "./pages/ResetPasswordPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 
 export default function App() {
@@ -25,6 +26,7 @@ export default function App() {
         <Route path="/login"           element={<GuestRoute><LoginPage /></GuestRoute>} />
         <Route path="/register"        element={<GuestRoute><RegisterPage /></GuestRoute>} />
         <Route path="/forgot-password" element={<GuestRoute><ForgotPasswordPage /></GuestRoute>} />
+        <Route path="/reset-password"  element={<GuestRoute><ResetPasswordPage /></GuestRoute>} />
 
         {/* Protected */}
         <Route path="/session"        element={<ProtectedRoute><SessionPage /></ProtectedRoute>} />

@@ -2,32 +2,32 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { FiArrowLeft, FiMail } from "react-icons/fi";
 import AuthLayout from "../layouts/AuthLayout";
+import { forgotPassword, parseApiError } from "../services/api";
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
+  const [email,   setEmail]   = useState("");
+  const [error,   setError]   = useState("");
+  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email.trim()) return setError("Email is required.");
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email.trim())) return setError("Please enter a valid email.");
-
     setLoading(true);
-    // Password reset is not yet implemented on the backend.
-    // Simulate a network delay and show success.
-    await new Promise((r) => setTimeout(r, 800));
-    setLoading(false);
-    setSuccess(true);
+    setError("");
+    try {
+      const data = await forgotPassword(email.trim());
+      setSuccess(data.message || "If this email is registered, a reset link has been sent.");
+    } catch (err) {
+      setError(parseApiError(err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <AuthLayout>
-      {/* Back arrow */}
       <button
         onClick={() => navigate(-1)}
         className="flex items-center gap-1 text-primary hover:text-primary-hover mb-5 w-fit transition-colors"
@@ -47,8 +47,8 @@ export default function ForgotPasswordPage() {
       )}
 
       {success ? (
-        <div className="px-3 py-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm">
-          If that email is registered, a recovery link has been sent. Check your inbox.
+        <div className="px-3 py-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm mb-5">
+          {success}
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -72,14 +72,14 @@ export default function ForgotPasswordPage() {
             disabled={loading}
             className="mt-1 w-full py-2.5 rounded-lg bg-primary hover:bg-primary-hover text-white text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {loading ? "Sending..." : "Send Link"}
+            {loading ? "Sending…" : "Send Link"}
           </button>
         </form>
       )}
 
       <div className="text-center mt-5">
-        <Link to="/register" className="text-sm text-primary hover:underline">
-          Don't have an account? Sign Up
+        <Link to="/login" className="text-sm text-primary hover:underline">
+          Back to Sign In
         </Link>
       </div>
     </AuthLayout>

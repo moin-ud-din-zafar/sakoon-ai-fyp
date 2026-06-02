@@ -62,6 +62,24 @@ export const loginUser = ({ email, password }) =>
 
 export const getMe = () => api.get("/auth/me").then((r) => r.data);
 
+export const changePassword = ({ currentPassword, newPassword }) =>
+  api.patch("/auth/change-password", { currentPassword, newPassword }).then((r) => r.data);
+
+export const forgotPassword = (email) =>
+  api.post("/auth/forgot-password", { email }).then((r) => r.data);
+
+export const resetPassword = ({ token, newPassword }) =>
+  api.post("/auth/reset-password", { token, newPassword }).then((r) => r.data);
+
+export const uploadProfileImage = (userId, file) => {
+  const form = new FormData();
+  form.append("file", file);
+  // Pass FormData without explicit Content-Type — Axios sets multipart boundary automatically
+  return api.post(`/user/${userId}/profile-image`, form, {
+    headers: { "Content-Type": undefined },
+  }).then((r) => r.data);
+};
+
 export const getSession = () => api.get("/auth/session").then((r) => r.data);
 
 // ── Chat ────────────────────────────────────────────────────────

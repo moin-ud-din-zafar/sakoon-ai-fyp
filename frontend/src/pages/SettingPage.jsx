@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiLogOut, FiX, FiLock, FiEye, FiEyeOff } from "react-icons/fi";
+import { FiLogOut, FiX, FiLock, FiEye, FiEyeOff, FiCamera } from "react-icons/fi";
 import AppLayout from "../layouts/AppLayout";
 import { useApp } from "../contexts/AppContext";
+import { changePassword, uploadProfileImage, parseApiError } from "../services/api";
 
 // ── constants ──────────────────────────────────────────────────────────────
 const AVATAR_LOOK_OPTIONS = ["Professional", "Casual", "Friendly", "Clinical"];
@@ -65,20 +66,31 @@ function SelectField({ label, value, onChange, options }) {
 }
 
 function ChangePasswordModal({ onClose }) {
-  const [form, setForm] = useState({ current: "", next: "", confirm: "" });
-  const [show, setShow] = useState({ current: false, next: false, confirm: false });
-  const [error, setError] = useState("");
+  const [form,    setForm]    = useState({ current: "", next: "", confirm: "" });
+  const [show,    setShow]    = useState({ current: false, next: false, confirm: false });
+  const [error,   setError]   = useState("");
+  const [success, setSuccess] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const toggle = (field) => setShow((s) => ({ ...s, [field]: !s[field] }));
   const handle = (e) => { setForm((f) => ({ ...f, [e.target.name]: e.target.value })); setError(""); };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.current) return setError("Current password is required.");
     if (form.next.length < 8) return setError("New password must be at least 8 characters.");
     if (form.next !== form.confirm) return setError("Passwords do not match.");
-    // No backend API exists for changing password
-    setError("Change password is not yet supported by the backend.");
+    setLoading(true);
+    setError("");
+    try {
+      const data = await changePassword({ currentPassword: form.current, newPassword: form.next });
+      setSuccess(data.message || "Password updated successfully.");
+      setTimeout(() => onClose(), 1800);
+    } catch (err) {
+      setError(parseApiError(err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -93,6 +105,11 @@ function ChangePasswordModal({ onClose }) {
         {error && (
           <div className="mb-4 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm">
             {error}
+          </div>
+        )}
+        {success && (
+          <div className="mb-4 px-3 py-2 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm">
+            {success}
           </div>
         )}
 
@@ -125,9 +142,9 @@ function ChangePasswordModal({ onClose }) {
               className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
               Cancel
             </button>
-            <button type="submit"
-              className="flex-1 py-2 rounded-lg bg-primary hover:bg-primary-hover text-white text-sm font-medium transition-colors">
-              Update
+            <button type="submit" disabled={loading}
+              className="flex-1 py-2 rounded-lg bg-primary hover:bg-primary-hover text-white text-sm font-medium transition-colors disabled:opacity-60">
+              {loading ? "Updating…" : "Update"}
             </button>
           </div>
         </form>
@@ -138,7 +155,7 @@ function ChangePasswordModal({ onClose }) {
 
 // ── main page ──────────────────────────────────────────────────────────────
 export default function SettingPage() {
-  const { user, logout } = useApp();
+  const { user, setUser, logout } = useApp();
   const navigate = useNavigate();
 
   const saved = loadPrefs();
@@ -147,7 +164,10 @@ export default function SettingPage() {
   const [personalityTraits, setPersonalityTraits]  = useState(saved.personalityTraits || "");
   const [language,          setLanguage]           = useState(saved.language          || user?.languagePreference || "en");
   const [culturalAdapt,     setCulturalAdapt]      = useState(saved.culturalAdapt     || "Global Standard");
-  const [showChangePwd,     setShowChangePwd]      = useState(false);
+  const [showChangePwd,   setShowChangePwd]   = useState(false);
+  const [imgLoading,      setImgLoading]      = useState(false);
+  const [imgError,        setImgError]        = useState("");
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     localStorage.setItem(
@@ -165,6 +185,28 @@ export default function SettingPage() {
     navigate("/login");
   };
 
+  const handleImageChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImgLoading(true);
+    setImgError("");
+    try {
+      const data = await uploadProfileImage(user.id, file);
+      // Resolve relative upload paths to the backend origin
+      const rawUrl = (data.user?.profileImageUrl) || data.imageUrl || "";
+      const backendOrigin = (import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1").replace("/api/v1", "");
+      const resolvedUrl = rawUrl.startsWith("/") ? `${backendOrigin}${rawUrl}` : rawUrl;
+      const updatedUser = { ...(data.user || user), profileImageUrl: resolvedUrl };
+      setUser(updatedUser);
+      localStorage.setItem("sakoon_user", JSON.stringify(updatedUser));
+    } catch (err) {
+      setImgError(parseApiError(err));
+    } finally {
+      setImgLoading(false);
+      e.target.value = "";
+    }
+  };
+
   const initials = user?.name?.charAt(0)?.toUpperCase() || "U";
 
   return (
@@ -175,12 +217,50 @@ export default function SettingPage() {
 
       <SectionCard title="Avatar & Preferences">
         <div className="flex items-center gap-3 mb-5">
-          <div className="w-12 h-12 rounded-full bg-primary-light flex items-center justify-center text-primary font-bold text-lg shrink-0 select-none">
-            {initials}
-          </div>
+          {/* Clickable avatar — uploads profile image */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={imgLoading}
+            className="relative w-12 h-12 rounded-full shrink-0 overflow-hidden group cursor-pointer"
+            title="Click to change profile photo"
+          >
+            {user?.profileImageUrl ? (
+              <img
+                src={
+                  user.profileImageUrl.startsWith("/")
+                    ? `${(import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1").replace("/api/v1", "")}${user.profileImageUrl}`
+                    : user.profileImageUrl
+                }
+                alt={user.name}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full bg-primary-light flex items-center justify-center text-primary font-bold text-lg select-none">
+                {initials}
+              </div>
+            )}
+            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full">
+              <FiCamera size={16} className="text-white" />
+            </div>
+            {imgLoading && (
+              <div className="absolute inset-0 bg-white/70 flex items-center justify-center rounded-full">
+                <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={handleImageChange}
+            className="hidden"
+          />
+
           <div>
             <p className="text-sm font-medium text-gray-800">{user?.name || "—"}</p>
             <p className="text-xs text-gray-500">{user?.email || "—"}</p>
+            {imgError && <p className="text-xs text-red-500 mt-0.5">{imgError}</p>}
           </div>
         </div>
 
