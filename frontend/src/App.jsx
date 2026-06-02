@@ -11,6 +11,7 @@ import SummaryPage        from "./pages/SummaryPage";
 import MoodTrackerPage    from "./pages/MoodTrackerPage";
 import PsychoeducationPage from "./pages/PsychoeducationPage";
 import SettingPage        from "./pages/SettingPage";
+import AdminDashboardPage from "./pages/AdminDashboardPage";
 
 export default function App() {
   return (
@@ -31,6 +32,9 @@ export default function App() {
         <Route path="/mood-tracker"   element={<ProtectedRoute><MoodTrackerPage /></ProtectedRoute>} />
         <Route path="/psychoeducation" element={<ProtectedRoute><PsychoeducationPage /></ProtectedRoute>} />
         <Route path="/setting"        element={<ProtectedRoute><SettingPage /></ProtectedRoute>} />
+
+        {/* Admin — own auth (sessionStorage adminKey), no JWT ProtectedRoute */}
+        <Route path="/admin" element={<AdminDashboardPage />} />
 
         {/* Catch-all */}
         <Route path="*" element={<Navigate to="/session" replace />} />

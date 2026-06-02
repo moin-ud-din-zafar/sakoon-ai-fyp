@@ -1,6 +1,6 @@
 # Sakoon AI — Frontend Developer Guide
 
-**Last updated:** 2026-06-02 (AppLayout container, 1050px breakpoint, console.log stubs for header buttons)  
+**Last updated:** 2026-06-02 (AdminDashboardPage fully built with API integration)  
 **Stack:** React 19 · Vite 6 · Tailwind CSS v4 · React Router DOM v7 · React Icons v5 · Axios  
 **Dev server:** `http://localhost:5173`  
 **Backend API:** `http://127.0.0.1:8000/api/v1`
@@ -80,7 +80,7 @@ frontend/
 │   │   ├── HomePage.jsx              # Deprecated — redirects to /session
 │   │   ├── SessionPage.jsx           # ✅ Built (default protected page)
 │   │   ├── SummaryPage.jsx           # ✅ Built — "Why Choose Sakoon AI?" static feature grid (3×2)
-│   │   ├── MoodTrackerPage.jsx       # ✅ Built (placeholder)
+│   │   ├── MoodTrackerPage.jsx       # ✅ Fully built — log mood, history, calendar, charts, insights
 │   │   ├── PsychoeducationPage.jsx   # ✅ Fully built — hero + filter tabs + lesson cards grid
 │   │   └── SettingPage.jsx           # ✅ Fully built — preferences saved to localStorage (sakoon_preferences)
 │   │
