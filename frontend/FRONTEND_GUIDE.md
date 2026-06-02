@@ -81,7 +81,7 @@ frontend/
 │   │   ├── SessionPage.jsx           # ✅ Built (default protected page)
 │   │   ├── SummaryPage.jsx           # ✅ Built — "Why Choose Sakoon AI?" static feature grid (3×2)
 │   │   ├── MoodTrackerPage.jsx       # ✅ Built (placeholder)
-│   │   ├── PsychoeducationPage.jsx   # ✅ Built (placeholder)
+│   │   ├── PsychoeducationPage.jsx   # ✅ Fully built — hero + filter tabs + lesson cards grid
 │   │   └── SettingPage.jsx           # ✅ Fully built — preferences saved to localStorage (sakoon_preferences)
 │   │
 │   ├── services/
