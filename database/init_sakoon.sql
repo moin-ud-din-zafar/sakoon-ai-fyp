@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
     name                VARCHAR(100) NOT NULL,
     email               VARCHAR(255) NOT NULL UNIQUE,
     password_hash       VARCHAR(255) NOT NULL,
+    profile_image_url   TEXT,
     language_preference VARCHAR(10) DEFAULT 'en',
     total_sessions      INT DEFAULT 0,
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -214,6 +215,21 @@ CREATE TABLE IF NOT EXISTS behavior_logs (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_behavior_logs_user (user_id),
     INDEX idx_behavior_logs_logged (logged_at)
+);
+
+-- ============================================
+-- 14. Password reset tokens
+-- ============================================
+CREATE TABLE IF NOT EXISTS password_resets (
+    id              INT PRIMARY KEY AUTO_INCREMENT,
+    user_id         INT NOT NULL,
+    token_hash      VARCHAR(128) NOT NULL UNIQUE,
+    expires_at      DATETIME NOT NULL,
+    used_at         DATETIME NULL,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_password_resets_user (user_id),
+    INDEX idx_password_resets_expires (expires_at)
 );
 
 -- ============================================

@@ -4,11 +4,13 @@ import app.utils.env_patch  # noqa: F401 — must run before transformers import
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import auth, chat, session, user, admin, tts
 from app.api.routes.assessment_routes import router as assessment_router
 from app.api.routes.mood_routes import router as mood_router
 from app.api.routes.avatar_routes import router as avatar_router
+from app.config import UPLOAD_DIR
 
 app = FastAPI(
     title="Sakoon AI",
@@ -33,6 +35,9 @@ app.include_router(tts.router, prefix="/api/v1")
 app.include_router(assessment_router, prefix="/api/v1")
 app.include_router(mood_router, prefix="/api/v1")
 app.include_router(avatar_router, prefix="/api/v1")
+
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 
 @app.get("/")

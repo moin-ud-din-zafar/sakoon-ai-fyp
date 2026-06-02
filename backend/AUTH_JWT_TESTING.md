@@ -10,6 +10,8 @@ Add to `backend/.env` (see `.env.example`):
 JWT_SECRET=your-long-random-secret
 JWT_ALGORITHM=HS256
 JWT_EXPIRE_MINUTES=10080
+RESET_TOKEN_EXPIRE_MINUTES=30
+RESET_PASSWORD_BASE_URL=http://localhost:5173/reset-password
 ```
 
 Install deps:
@@ -39,6 +41,9 @@ Restart uvicorn so tables migrate with `email` + `password_hash`.
 |--------|------|------|------|
 | POST | `/api/v1/auth/register` | No | `name`, `email`, `password` (min 8), `languagePreference?` |
 | POST | `/api/v1/auth/login` | No | `email`, `password` |
+| PATCH | `/api/v1/auth/change-password` | Bearer | `currentPassword`, `newPassword` |
+| POST | `/api/v1/auth/forgot-password` | No | `email` |
+| POST | `/api/v1/auth/reset-password` | No | `token`, `newPassword` |
 | GET | `/api/v1/auth/me` | Bearer | — |
 | GET | `/api/v1/auth/session` | Bearer | — |
 
@@ -80,6 +85,10 @@ Invoke-RestMethod -Uri "$Base/auth/me" -Headers $hdr
 $sess = Invoke-RestMethod -Uri "$Base/auth/session" -Headers $hdr
 $sid = $sess.session.id
 $uid = $reg.user.id
+
+# Change password
+Invoke-RestMethod -Method PATCH -Uri "$Base/auth/change-password" -Headers @{ Authorization = "Bearer $token"; "Content-Type" = $Json } `
+  -Body '{"currentPassword":"TestPass123!","newPassword":"NewPass123!"}'
 
 # Chat
 Invoke-RestMethod -Method POST -Uri "$Base/chat/message" `

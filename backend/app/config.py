@@ -40,6 +40,11 @@ HF_CHAT_MODEL = os.getenv("HF_CHAT_MODEL", "mistralai/Mistral-7B-Instruct-v0.3")
 JWT_SECRET = os.getenv("JWT_SECRET", "change-me-sakoon-jwt-secret-in-production")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "1440"))  # 24 hours
+RESET_TOKEN_EXPIRE_MINUTES = int(os.getenv("RESET_TOKEN_EXPIRE_MINUTES", "30"))
+RESET_PASSWORD_BASE_URL = os.getenv(
+    "RESET_PASSWORD_BASE_URL",
+    "http://localhost:5173/reset-password",
+)
 
 # Admin
 ADMIN_KEY = os.getenv("ADMIN_KEY", "sakoon-admin-secret-change-in-prod")
@@ -48,6 +53,21 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "sakoon123")  # Change in productio
 
 # App
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", str(Path(__file__).resolve().parent.parent / "uploads")))
+MAX_PROFILE_IMAGE_MB = int(os.getenv("MAX_PROFILE_IMAGE_MB", "5"))
+
+# Cloudinary (profile image storage)
+CLOUDINARY_NAME = os.getenv("CLOUDINARY_NAME", "")
+CLOUDINARY_KEY = os.getenv("CLOUDINARY_KEY", "")
+CLOUDINARY_SECRET = os.getenv("CLOUDINARY_SECRET", "")
+
+# Email (forgot password)
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() in ("1", "true", "yes")
+SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", "no-reply@sakoon.local")
 
 # Set USE_SQLITE=true in .env only if you want file-based SQLite instead of MySQL
 USE_SQLITE = os.getenv("USE_SQLITE", "false").lower() == "true"

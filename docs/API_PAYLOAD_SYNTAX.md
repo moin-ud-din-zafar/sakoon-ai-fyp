@@ -150,6 +150,69 @@ Backend exact field names expect karta hai — neeche wahi likhe hain.
 
 ---
 
+### PATCH `/auth/change-password` (JWT)
+
+```json
+{
+  "currentPassword": "OldPass123!",
+  "newPassword": "NewPass123!"
+}
+```
+
+**Response 200:**
+
+```json
+{
+  "ok": true,
+  "message": "Password updated successfully"
+}
+```
+
+**Errors:** `401` current password invalid · `400` new == old · `422` weak/missing fields
+
+---
+
+### POST `/auth/forgot-password` (public)
+
+```json
+{
+  "email": "ali@example.com"
+}
+```
+
+**Response 200 (always generic):**
+
+```json
+{
+  "ok": true,
+  "message": "If this email exists, a reset link has been sent."
+}
+```
+
+---
+
+### POST `/auth/reset-password` (public)
+
+```json
+{
+  "token": "<token-from-email-link>",
+  "newPassword": "NewPass123!"
+}
+```
+
+**Response 200:**
+
+```json
+{
+  "ok": true,
+  "message": "Password has been reset successfully"
+}
+```
+
+**Errors:** `400` invalid/expired token · `422` invalid body
+
+---
+
 ## 3. Chat (JWT)
 
 ### POST `/chat/message`
@@ -300,6 +363,39 @@ Crisis example: `"isCrisis": true`, `"helplineNumbers": [{ "name": "...", "numbe
 All fields optional but send `assignmentId` when rating an exercise.
 
 **Response 200:** `{ "ok": true }`
+
+---
+
+### POST `/user/{userId}/profile-image` (JWT, multipart)
+
+Use `multipart/form-data` with key `file`.
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/user/1/profile-image" \
+  -H "Authorization: Bearer <accessToken>" \
+  -F "file=@avatar.png"
+```
+
+Allowed types: `jpg`, `png`, `webp` (max size from backend env, default 5MB).
+
+Storage behavior:
+- If `CLOUDINARY_*` is configured, backend uploads to Cloudinary and returns `secure_url`.
+- Otherwise backend uses local `/uploads/profile-images/...` fallback.
+
+**Response 200:**
+
+```json
+{
+  "ok": true,
+  "imageUrl": "/uploads/profile-images/user-1-a1b2c3d4e5f6.png",
+  "user": {
+    "id": 1,
+    "name": "Ali Khan",
+    "email": "ali@example.com",
+    "profileImageUrl": "/uploads/profile-images/user-1-a1b2c3d4e5f6.png"
+  }
+}
+```
 
 ---
 
