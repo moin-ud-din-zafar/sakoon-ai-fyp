@@ -4,6 +4,7 @@ import { FiLogOut, FiX, FiLock, FiEye, FiEyeOff, FiCamera } from "react-icons/fi
 import AppLayout from "../layouts/AppLayout";
 import { useApp } from "../contexts/AppContext";
 import { changePassword, uploadProfileImage, parseApiError } from "../services/api";
+import UserAvatar from "../components/UserAvatar";
 
 // ── constants ──────────────────────────────────────────────────────────────
 const AVATAR_LOOK_OPTIONS = ["Professional", "Casual", "Friendly", "Clinical"];
@@ -225,21 +226,9 @@ export default function SettingPage() {
             className="relative w-12 h-12 rounded-full shrink-0 overflow-hidden group cursor-pointer"
             title="Click to change profile photo"
           >
-            {user?.profileImageUrl ? (
-              <img
-                src={
-                  user.profileImageUrl.startsWith("/")
-                    ? `${(import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1").replace("/api/v1", "")}${user.profileImageUrl}`
-                    : user.profileImageUrl
-                }
-                alt={user.name}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full bg-primary-light flex items-center justify-center text-primary font-bold text-lg select-none">
-                {initials}
-              </div>
-            )}
+            <div className="w-full h-full bg-primary-light flex items-center justify-center text-primary font-bold text-lg select-none">
+              <UserAvatar src={user?.profileImageUrl} name={user?.name} />
+            </div>
             <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full">
               <FiCamera size={16} className="text-white" />
             </div>

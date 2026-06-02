@@ -4,6 +4,7 @@ import { HiMenu, HiX } from "react-icons/hi";
 import { FiHelpCircle } from "react-icons/fi";
 import logo from "../assets/images/logo.jpeg";
 import { useApp } from "../contexts/AppContext";
+import UserAvatar from "./UserAvatar";
 
 const NAV_LINKS = [
   { label: "Session",         to: "/session" },
@@ -88,9 +89,7 @@ function SettingActions({ user, mobile }) {
         Save
       </button>
       <div className="w-8 h-8 rounded-full bg-primary-light overflow-hidden flex items-center justify-center text-primary text-sm font-bold select-none shrink-0">
-        {user?.profileImageUrl ? (
-          <img src={user.profileImageUrl} alt={initials} className="w-full h-full object-cover" />
-        ) : initials}
+        <UserAvatar src={user?.profileImageUrl} name={user?.name} />
       </div>
     </>
   );
